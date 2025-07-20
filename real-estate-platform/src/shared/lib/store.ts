@@ -14,7 +14,7 @@ interface AppStore {
   isLoading: boolean;
   
   // Actions
-  setBaseRegion: (region: Region) => void;
+  setBaseRegion: (region: Region | null) => void;
   addComparisonRegion: (region: Region) => void;
   removeComparisonRegion: (regionId: string) => void;
   clearComparisonRegions: () => void;
