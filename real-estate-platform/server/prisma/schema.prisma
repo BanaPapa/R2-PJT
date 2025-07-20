@@ -1,0 +1,53 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./kb_data.db"
+}
+
+// KB 시계열 데이터 테이블
+model KBTimeSeries {
+  id            String   @id @default(cuid())
+  week          String   // 주차 (YYYYMMDD)
+  regionCode    String   // 지역 코드
+  regionName    String   // 지역명
+  saleIndex     Float    // 매매 지수
+  leaseIndex    Float    // 전세 지수
+  baseDate      String   // 기준일 (2022.1.10 등)
+  dataSource    String   // 데이터 소스 파일명
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([week, regionCode])
+  @@map("kb_time_series")
+}
+
+// 사용자 설정 테이블
+model UserSettings {
+  id               String   @id @default(cuid())
+  userId           String   @unique @default("default")
+  basePeriodYears  Int      @default(3) // 기준 기간 (년)
+  useCustomBase    Boolean  @default(true) // 커스텀 기준일 사용 여부
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+// 데이터 수집 로그
+model DataCollectionLog {
+  id            String   @id @default(cuid())
+  week          String   // 수집 주차
+  fileName      String   // 다운로드된 파일명
+  status        String   // SUCCESS, FAILED, PROCESSING
+  recordCount   Int?     // 처리된 레코드 수
+  errorMessage  String?  // 에러 메시지
+  createdAt     DateTime @default(now())
+
+  @@map("data_collection_logs")
+}

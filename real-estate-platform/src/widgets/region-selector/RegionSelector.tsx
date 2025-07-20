@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Button } from '../../shared/ui';
 import { useAppStore } from '../../shared/lib/store';
 import { MVP_CONFIG } from '../../shared/config';
 

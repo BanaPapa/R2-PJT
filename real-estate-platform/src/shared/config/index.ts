@@ -9,7 +9,7 @@ export const MVP_CONFIG = {
   ],
   
   // Sample data points per region
-  DATA_POINTS_PER_REGION: 12, // 12 months of data
+  DATA_POINTS_PER_REGION: 30, // 30 months of data (2023.01 ~ 2025.07)
   
   // Chart configuration
   CHART: {

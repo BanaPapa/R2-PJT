@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
+import { Settings } from 'lucide-react';
+import { SettingsPanel } from '../../features/settings-panel';
 
 export const Header: React.FC = () => {
   const [dataPeriod, setDataPeriod] = useState<'monthly' | 'weekly'>('monthly');
   const [dataType, setDataType] = useState<'sales' | 'lease'>('sales');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   return (
     <header className="bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200/60 h-16 fixed top-0 left-0 right-0 z-40">
@@ -70,6 +73,15 @@ export const Header: React.FC = () => {
             </button>
           </div>
           
+          {/* Settings Button */}
+          <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl transition-all duration-200 transform hover:scale-105"
+          >
+            <Settings className="w-4 h-4" />
+            <span className="hidden sm:inline">설정</span>
+          </button>
+
           {/* Export Button */}
           <button className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-medium rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -79,6 +91,12 @@ export const Header: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Settings Panel */}
+      <SettingsPanel 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+      />
     </header>
   );
 };
