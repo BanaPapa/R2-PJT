@@ -1,42 +1,34 @@
-export interface KBRawData {
-  week: string;
-  regionCode: string;
-  regionName: string;
-  saleIndex: number;
-  leaseIndex: number;
-  baseDate: string;
+export interface WeeklyDataRow {
+  id: number;
+  date: string;
+  region: string;
+  saleChange: number | null;
+  jeonseChange: number | null;
+  saleIndex: number | null;
+  jeonseIndex: number | null;
+  buyerAdvantage: number | null;
+  saleActivity: number | null;
+  jeonseSupply: number | null;
+  jeonseActivity: number | null;
 }
 
-export interface RecalculatedIndex {
-  week: string;
-  regionCode: string;
-  regionName: string;
-  originalSaleIndex: number;
-  originalLeaseIndex: number;
-  recalculatedSaleIndex: number;
-  recalculatedLeaseIndex: number;
-  baseDate: string;
-  customBaseDate?: string;
+export interface CollectionLog {
+  id: number;
+  dataType: string;
+  fileName: string;
+  status: string;
+  recordCount: number | null;
+  errorMsg: string | null;
+  createdAt: string;
 }
 
-export interface RegionStatistics {
-  regionCode: string;
-  regionName: string;
-  week: string;
-  saleIndex: number;
-  leaseIndex: number;
-  saleChangeRate: number;
-  leaseChangeRate: number;
+export interface CollectionStatus {
+  logs: CollectionLog[];
+  latestDate: string | null;
+  totalRecords: number;
 }
 
-export interface DataCollectionStatus {
-  hasNewData: boolean;
-  fileName?: string;
-  week?: string;
-  lastCheck: string;
-}
-
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   message?: string;

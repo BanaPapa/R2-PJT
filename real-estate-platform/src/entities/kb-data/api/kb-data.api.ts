@@ -1,15 +1,8 @@
-import type { 
-  RecalculatedIndex, 
-  RegionStatistics, 
-  DataCollectionStatus,
-  ApiResponse 
-} from '../model/kb-data.types';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_BASE_URL } from '../../../shared/config';
+import type { WeeklyDataRow, CollectionStatus, ApiResponse } from '../model/kb-data.types';
 
 export class KBDataApiError extends Error {
   public status?: number;
-  
   constructor(message: string, status?: number) {
     super(message);
     this.name = 'KBDataApiError';
@@ -17,181 +10,53 @@ export class KBDataApiError extends Error {
   }
 }
 
-export interface TimeSeriesParams {
-  regionCode: string;
-  startDate?: string;
-  endDate?: string;
-  useCustomBase?: boolean;
-  basePeriodYears?: number;
+async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
+  if (!response.ok) {
+    throw new KBDataApiError(`HTTP ${response.status}`, response.status);
+  }
+  const result: ApiResponse<T> = await response.json();
+  if (!result.success) {
+    throw new KBDataApiError(result.error || 'API error');
+  }
+  return result.data as T;
 }
 
 export const kbDataApi = {
-  /**
-   * 지역별 시계열 데이터 조회 (동적 기준일 적용)
-   */
-  async getTimeSeries(params: TimeSeriesParams): Promise<RecalculatedIndex[]> {
-    try {
-      const searchParams = new URLSearchParams();
-      
-      if (params.startDate) searchParams.set('startDate', params.startDate);
-      if (params.endDate) searchParams.set('endDate', params.endDate);
-      if (params.useCustomBase !== undefined) searchParams.set('useCustomBase', params.useCustomBase.toString());
-      if (params.basePeriodYears) searchParams.set('basePeriodYears', params.basePeriodYears.toString());
-
-      const url = `${API_BASE_URL}/regions/${params.regionCode}/timeseries?${searchParams.toString()}`;
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new KBDataApiError(
-          `시계열 데이터 조회 실패: ${response.status}`,
-          response.status
-        );
-      }
-
-      const result: ApiResponse<RecalculatedIndex[]> = await response.json();
-      
-      if (!result.success) {
-        throw new KBDataApiError(result.error || '시계열 데이터 조회에 실패했습니다.');
-      }
-
-      return result.data || [];
-    } catch (error) {
-      if (error instanceof KBDataApiError) {
-        throw error;
-      }
-      throw new KBDataApiError('네트워크 오류가 발생했습니다.');
-    }
+  async getRegions(): Promise<string[]> {
+    return fetchJson<string[]>(`${API_BASE_URL}/regions`);
   },
 
-  /**
-   * 지역별 최신 통계 조회
-   */
-  async getRegionStatistics(regionCode: string): Promise<RegionStatistics> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/regions/${regionCode}/statistics`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new KBDataApiError(
-          `지역 통계 조회 실패: ${response.status}`,
-          response.status
-        );
-      }
-
-      const result: ApiResponse<RegionStatistics> = await response.json();
-      
-      if (!result.success) {
-        throw new KBDataApiError(result.error || '지역 통계 조회에 실패했습니다.');
-      }
-
-      if (!result.data) {
-        throw new KBDataApiError('통계 데이터가 없습니다.');
-      }
-
-      return result.data;
-    } catch (error) {
-      if (error instanceof KBDataApiError) {
-        throw error;
-      }
-      throw new KBDataApiError('네트워크 오류가 발생했습니다.');
-    }
+  async getWeeklyData(regions: string[], from: string, to: string): Promise<WeeklyDataRow[]> {
+    const params = new URLSearchParams();
+    if (regions.length > 0) params.set('regions', regions.join(','));
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return fetchJson<WeeklyDataRow[]>(`${API_BASE_URL}/data/weekly?${params}`);
   },
 
-  /**
-   * 데이터 수집 상태 확인
-   */
-  async getCollectionStatus(): Promise<DataCollectionStatus> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/collection-status`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new KBDataApiError(
-          `수집 상태 조회 실패: ${response.status}`,
-          response.status
-        );
-      }
-
-      const result: ApiResponse<DataCollectionStatus> = await response.json();
-      
-      if (!result.success) {
-        throw new KBDataApiError(result.error || '수집 상태 조회에 실패했습니다.');
-      }
-
-      if (!result.data) {
-        throw new KBDataApiError('상태 데이터가 없습니다.');
-      }
-
-      return result.data;
-    } catch (error) {
-      if (error instanceof KBDataApiError) {
-        throw error;
-      }
-      throw new KBDataApiError('네트워크 오류가 발생했습니다.');
-    }
+  async getCollectionStatus(): Promise<CollectionStatus> {
+    return fetchJson<CollectionStatus>(`${API_BASE_URL}/collection/status`);
   },
 
-  /**
-   * 수동 데이터 수집 트리거
-   */
-  async triggerDataCollection(): Promise<void> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/collect-data`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new KBDataApiError(
-          `데이터 수집 실패: ${response.status}`,
-          response.status
-        );
-      }
-
-      const result: ApiResponse = await response.json();
-      
-      if (!result.success) {
-        throw new KBDataApiError(result.error || '데이터 수집에 실패했습니다.');
-      }
-    } catch (error) {
-      if (error instanceof KBDataApiError) {
-        throw error;
-      }
-      throw new KBDataApiError('네트워크 오류가 발생했습니다.');
-    }
+  async triggerCollection(type: 'weekly' | 'monthly' = 'weekly'): Promise<void> {
+    await fetchJson(`${API_BASE_URL}/collection/trigger`, {
+      method: 'POST',
+      body: JSON.stringify({ type }),
+    });
   },
 
-  /**
-   * 서버 헬스체크
-   */
+  async getLatestDate(): Promise<string | null> {
+    const result = await fetch(`${API_BASE_URL}/collection/latest-date`);
+    const json = await result.json();
+    return json.latestDate ?? null;
+  },
+
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE_URL}/health`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
+      const response = await fetch(`${API_BASE_URL}/health`);
       return response.ok;
-    } catch (error) {
-      console.error('헬스체크 실패:', error);
+    } catch {
       return false;
     }
   },

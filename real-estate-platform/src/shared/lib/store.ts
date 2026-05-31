@@ -1,67 +1,99 @@
 import { create } from 'zustand';
-import { type Region, type PriceData } from '../config';
-import { SAMPLE_PRICE_DATA } from './sample-data';
+import { kbDataApi } from '../../entities/kb-data';
+import type { WeeklyDataRow } from '../../entities/kb-data';
 
 interface AppStore {
-  // Selected regions
-  baseRegion: Region | null;
-  comparisonRegions: Region[];
-  
+  // Region state
+  allRegions: string[];
+  selectedRegions: string[];
+  regionsLoading: boolean;
+
+  // Date range
+  fromDate: string;
+  toDate: string;
+
   // Data
-  priceData: PriceData[];
-  
-  // UI State
-  isLoading: boolean;
-  
+  weeklyData: WeeklyDataRow[];
+  dataLoading: boolean;
+  dataError: string | null;
+
+  // Collection status
+  latestDate: string | null;
+  totalRecords: number;
+
   // Actions
-  setBaseRegion: (region: Region | null) => void;
-  addComparisonRegion: (region: Region) => void;
-  removeComparisonRegion: (regionId: string) => void;
-  clearComparisonRegions: () => void;
-  
-  // Data actions
-  loadData: () => Promise<void>;
+  loadRegions: () => Promise<void>;
+  toggleRegion: (region: string) => void;
+  clearRegions: () => void;
+  setFromDate: (date: string) => void;
+  setToDate: (date: string) => void;
+  loadWeeklyData: () => Promise<void>;
+  loadStatus: () => Promise<void>;
 }
 
+const DEFAULT_FROM = '2023-01-01';
+const DEFAULT_TO = new Date().toISOString().split('T')[0];
+
 export const useAppStore = create<AppStore>((set, get) => ({
-  // Initial state
-  baseRegion: null,
-  comparisonRegions: [],
-  priceData: SAMPLE_PRICE_DATA,
-  isLoading: false,
-  
-  // Region selection actions
-  setBaseRegion: (region) => {
-    set({ baseRegion: region });
-  },
-  
-  addComparisonRegion: (region) => {
-    const { comparisonRegions } = get();
-    if (comparisonRegions.length >= 3 || comparisonRegions.some(r => r.id === region.id)) {
-      return; // Max 3 comparison regions or already added
+  allRegions: [],
+  selectedRegions: ['서울특별시', '전국'],
+  regionsLoading: false,
+
+  fromDate: DEFAULT_FROM,
+  toDate: DEFAULT_TO,
+
+  weeklyData: [],
+  dataLoading: false,
+  dataError: null,
+
+  latestDate: null,
+  totalRecords: 0,
+
+  loadRegions: async () => {
+    set({ regionsLoading: true });
+    try {
+      const regions = await kbDataApi.getRegions();
+      set({ allRegions: regions, regionsLoading: false });
+    } catch {
+      set({ regionsLoading: false });
     }
-    set({ comparisonRegions: [...comparisonRegions, region] });
   },
-  
-  removeComparisonRegion: (regionId) => {
-    const { comparisonRegions } = get();
-    set({ comparisonRegions: comparisonRegions.filter(r => r.id !== regionId) });
+
+  toggleRegion: (region: string) => {
+    const { selectedRegions } = get();
+    if (selectedRegions.includes(region)) {
+      set({ selectedRegions: selectedRegions.filter(r => r !== region) });
+    } else if (selectedRegions.length < 5) {
+      set({ selectedRegions: [...selectedRegions, region] });
+    }
   },
-  
-  clearComparisonRegions: () => {
-    set({ comparisonRegions: [] });
+
+  clearRegions: () => set({ selectedRegions: [] }),
+
+  setFromDate: (date: string) => set({ fromDate: date }),
+  setToDate: (date: string) => set({ toDate: date }),
+
+  loadWeeklyData: async () => {
+    const { selectedRegions, fromDate, toDate } = get();
+    if (selectedRegions.length === 0) {
+      set({ weeklyData: [] });
+      return;
+    }
+    set({ dataLoading: true, dataError: null });
+    try {
+      const data = await kbDataApi.getWeeklyData(selectedRegions, fromDate, toDate);
+      set({ weeklyData: data, dataLoading: false });
+    } catch (e) {
+      set({ dataError: e instanceof Error ? e.message : 'Failed to load data', dataLoading: false });
+    }
   },
-  
-  // Data loading (MVP: just returns sample data)
-  loadData: async () => {
-    set({ isLoading: true });
-    
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    set({ 
-      priceData: SAMPLE_PRICE_DATA,
-      isLoading: false 
-    });
+
+  loadStatus: async () => {
+    try {
+      const status = await kbDataApi.getCollectionStatus();
+      set({ latestDate: status.latestDate, totalRecords: status.totalRecords });
+    } catch {
+      // ignore
+    }
   },
 }));
