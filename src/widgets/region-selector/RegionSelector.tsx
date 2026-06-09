@@ -1,8 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../shared/lib/store';
+import { useMonthlyStore } from '../../shared/lib/monthly-store';
 import { MAX_REGIONS, CHART_COLORS } from '../../shared/config';
 import { AGGREGATE_REGIONS } from '../../shared/config/kb-aggregates';
 import { getRegions, peekRegions, prefetchRegions, type RegionItem } from '../../shared/lib/kb-region-api';
+import { InfoTip } from '../../shared/ui/InfoTip';
+import { PeriodSlider } from './PeriodSlider';
+
+// 이동평균 기간 선택지(주)
+const MA_OPTIONS = [4, 13, 26, 52];
+const MA_LABEL: Record<number, string> = { 4: '4주', 13: '13주(분기)', 26: '26주(반기)', 52: '52주(1년)' };
+const TRADE_VIEW_HELP =
+  '확산지수: 0~200 범위, 100이 중립. 100을 넘으면 강세(매수세·수요·거래 우위), 미만이면 약세.\n\n' +
+  '이동평균: 매주 오르내리는 값을 최근 N주 평균으로 부드럽게 만든 추세선입니다. 단기 노이즈를 걸러 흐름을 보기 쉽게 하며, 기간이 짧을수록 민감·길수록 완만합니다.\n\n' +
+  'Y축 범위: 각 그래프 제목 우측에서 그래프별로 조정하며, [Y축 초기화]로 모두 기본(0~200)으로 되돌립니다.';
 
 // 대지역 선택값 인코딩: 집계지역은 "agg:전국", 시도는 "sido:41".
 type LargeValue = string;
@@ -48,15 +59,12 @@ function buildMidOptions(level2: RegionItem[], available: Set<string>, sido: str
 export const RegionSelector: React.FC = () => {
   const {
     allRegions,
+    allTradeRegions,
     selectedRegions,
     regionLabels,
     addRegion,
     removeRegion,
     clearRegions,
-    fromDate,
-    toDate,
-    setFromDate,
-    setToDate,
     baseDate,
     setBaseDate,
     allDates,
@@ -66,7 +74,21 @@ export const RegionSelector: React.FC = () => {
     totalRecords,
   } = useAppStore();
 
-  const availableSet = useMemo(() => new Set(allRegions), [allRegions]);
+  // 거래지표 탭에선 대지역(시/도·집계)만 선택 가능 + 보기 옵션을 여기서 제어
+  const {
+    weeklyTab,
+    tradeMaOn,
+    tradeMaWindow,
+    setTradeMaOn,
+    setTradeMaWindow,
+    resetTradeYRanges,
+  } = useMonthlyStore();
+  const isTrade = weeklyTab === 'trade';
+
+  const availableSet = useMemo(
+    () => new Set(isTrade ? allTradeRegions : allRegions),
+    [isTrade, allRegions, allTradeRegions],
+  );
 
   // 대지역(시도) 목록 — KB Land API level 1
   const [sidoList, setSidoList] = useState<RegionItem[]>([]);
@@ -146,7 +168,7 @@ export const RegionSelector: React.FC = () => {
       };
     }
     if (selectedSido) {
-      if (midKey) {
+      if (!isTrade && midKey) {
         const opt = midOptions.find(m => m.key === midKey);
         if (opt) return { key: opt.key, display: opt.basketLabel, available: opt.available };
       }
@@ -157,7 +179,7 @@ export const RegionSelector: React.FC = () => {
       };
     }
     return null;
-  }, [selectedAggregate, selectedSido, midKey, midOptions, availableSet]);
+  }, [selectedAggregate, selectedSido, midKey, midOptions, availableSet, isTrade]);
 
   const alreadyAdded = !!target && selectedRegions.includes(target.key);
   const isFull = selectedRegions.length >= MAX_REGIONS;
@@ -168,7 +190,7 @@ export const RegionSelector: React.FC = () => {
     addRegion(target.key, target.display);
   };
 
-  const midDisabled = !selectedSido || loadingMid;
+  const midDisabled = !selectedSido || loadingMid || isTrade;
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -186,41 +208,61 @@ export const RegionSelector: React.FC = () => {
           )}
         </div>
 
-        {/* Date Range */}
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">시작일</label>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={e => setFromDate(e.target.value)}
-              className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">종료일</label>
-            <input
-              type="date"
-              value={toDate}
-              onChange={e => setToDate(e.target.value)}
-              className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-        </div>
+        {/* 기간 선택 (프리셋 + 드래그 막대) */}
+        <PeriodSlider />
 
-        {/* 지수 기준일 — 선택한 주의 매매·전세지수를 100.0으로 리베이스 */}
-        <div className="mt-3">
-          <label className="block text-xs text-gray-400 mb-1">지수 기준일 (이 주 = 100.0)</label>
-          <select
-            value={baseDate}
-            onChange={e => setBaseDate(e.target.value)}
-            className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-          >
-            {allDates.slice().reverse().map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-        </div>
+        {/* 지수 기준일 — 시세지표(지수 리베이스)에만 적용 */}
+        {!isTrade && (
+          <div className="mt-3">
+            <label className="block text-xs text-gray-400 mb-1">지수 기준일 (이 주 = 100.0)</label>
+            <select
+              value={baseDate}
+              onChange={e => setBaseDate(e.target.value)}
+              className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            >
+              {allDates.slice().reverse().map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 거래지표 보기 옵션 — 한 줄: 이동평균 토글/기간 + Y축 초기화 */}
+        {isTrade && (
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center gap-1 text-xs text-gray-400">
+              <span>거래지표 보기</span>
+              <InfoTip text={TRADE_VIEW_HELP} />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setTradeMaOn(!tradeMaOn)}
+                className={`flex-none whitespace-nowrap rounded-md border px-2 py-1 text-xs font-semibold transition-colors ${
+                  tradeMaOn ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-400'
+                }`}
+              >
+                이동평균 {tradeMaOn ? 'ON' : 'OFF'}
+              </button>
+              <select
+                value={tradeMaWindow}
+                disabled={!tradeMaOn}
+                onChange={e => setTradeMaWindow(Number(e.target.value))}
+                className="min-w-0 flex-1 text-xs border border-gray-200 rounded-md px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-300"
+              >
+                {MA_OPTIONS.map(w => (
+                  <option key={w} value={w}>{MA_LABEL[w]}</option>
+                ))}
+              </select>
+              <button
+                onClick={resetTradeYRanges}
+                title="모든 그래프 Y축을 기본(0~200)으로 초기화"
+                className="flex-none whitespace-nowrap rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 transition-colors hover:border-blue-300 hover:bg-gray-50 hover:text-blue-600"
+              >
+                Y축 초기화
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Cascading region selector */}
@@ -262,7 +304,9 @@ export const RegionSelector: React.FC = () => {
             className="w-full text-sm border border-gray-200 rounded-md px-2 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-300"
           >
             <option value="">
-              {!selectedSido
+              {isTrade
+                ? '거래지표는 대지역만 선택'
+                : !selectedSido
                 ? selectedAggregate
                   ? '집계 지역은 중지역 없음'
                   : '대지역을 먼저 선택'

@@ -6,7 +6,7 @@ interface StoreProviderProps {
 }
 
 export const StoreProvider: React.FC<StoreProviderProps> = ({ children }) => {
-  const { loadRegions, loadStatus, loadWeeklyData, loadDates } = useAppStore();
+  const { loadRegions, loadStatus, loadWeeklyData, loadTradeData, loadDates } = useAppStore();
 
   // Initialize on app start
   useEffect(() => {
@@ -14,6 +14,7 @@ export const StoreProvider: React.FC<StoreProviderProps> = ({ children }) => {
     loadStatus();
     loadDates();
     loadWeeklyData();
+    loadTradeData();
   }, []);
 
   return <>{children}</>;

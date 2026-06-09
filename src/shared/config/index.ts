@@ -31,6 +31,15 @@ export const WEEKLY_METRICS = [
   { key: 'jeonseChange', label: '전세증감', unit: '%' },
 ] as const satisfies readonly { key: MetricKey; label: string; unit: string }[];
 
+// 주간 거래지표 4개 시트(대지역/집계만). 화면 배치 순서대로:
+// 좌상 매수우위, 우상 전세수급, 좌하 매매거래활발, 우하 전세거래활발.
+export const TRADE_METRICS = [
+  { key: 'buyerAdvantage', label: '매수우위지수', unit: '' },
+  { key: 'jeonseSupply', label: '전세수급지수', unit: '' },
+  { key: 'saleActivity', label: '매매거래활발지수', unit: '' },
+  { key: 'jeonseActivity', label: '전세거래활발지수', unit: '' },
+] as const satisfies readonly { key: MetricKey; label: string; unit: string }[];
+
 // 월간 지표 (5개 시트). 단위 표기는 차트/툴팁에 사용.
 export const MONTHLY_METRICS = [
   { key: 'saleAptIndex', label: '아파트 매매가격지수', unit: '' },

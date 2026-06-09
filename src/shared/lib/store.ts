@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import { weeklyLocal } from '../../entities/kb-data/api/weekly-local';
+import { weeklyTradeLocal } from '../../entities/kb-data/api/weekly-trade-local';
 import type { WeeklyDataRow } from '../../entities/kb-data';
 
 interface AppStore {
   // Region state
   allRegions: string[];
+  allTradeRegions: string[]; // 거래지표 제공 지역(대지역/집계만)
   selectedRegions: string[];
   regionLabels: Record<string, string>; // weeklyKey → 표시 라벨 (예: "덕양구" → "고양시 덕양구")
   regionsLoading: boolean;
@@ -15,13 +17,18 @@ interface AppStore {
 
   // 지수 기준일 (이 날짜의 지수를 100으로 리베이스)
   baseDate: string;
-  // 전체 주간 날짜(월요일) 목록 — 기준일 드롭다운 등에 사용
-  allDates: string[];
+  // 전체 주간 날짜(월요일) 목록 — 기준일 드롭다운/기간 슬라이더에 사용
+  allDates: string[]; // 시세지표(2008~)
+  allTradeDates: string[]; // 거래지표(2003~)
 
   // Data
   weeklyData: WeeklyDataRow[];
   dataLoading: boolean;
   dataError: string | null;
+
+  // 거래지표 데이터 (매수우위·매매거래활발·전세수급·전세거래활발, 대지역만)
+  tradeData: WeeklyDataRow[];
+  tradeLoading: boolean;
 
   // Collection status
   latestDate: string | null;
@@ -36,6 +43,7 @@ interface AppStore {
   setToDate: (date: string) => void;
   setBaseDate: (date: string) => void;
   loadWeeklyData: () => Promise<void>;
+  loadTradeData: () => Promise<void>;
   loadDates: () => Promise<void>;
   loadStatus: () => Promise<void>;
 }
@@ -47,6 +55,7 @@ const DEFAULT_BASE = '2026-01-12';
 
 export const useAppStore = create<AppStore>((set, get) => ({
   allRegions: [],
+  allTradeRegions: [],
   selectedRegions: ['서울특별시', '전국'],
   regionLabels: { 서울특별시: '서울특별시', 전국: '전국' },
   regionsLoading: false,
@@ -55,10 +64,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
   toDate: DEFAULT_TO,
   baseDate: DEFAULT_BASE,
   allDates: [],
+  allTradeDates: [],
 
   weeklyData: [],
   dataLoading: false,
   dataError: null,
+
+  tradeData: [],
+  tradeLoading: false,
 
   latestDate: null,
   totalRecords: 0,
@@ -66,8 +79,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   loadRegions: async () => {
     set({ regionsLoading: true });
     try {
-      const regions = await weeklyLocal.getRegions();
-      set({ allRegions: regions, regionsLoading: false });
+      const [regions, tradeRegions] = await Promise.all([
+        weeklyLocal.getRegions(),
+        weeklyTradeLocal.getRegions(),
+      ]);
+      set({ allRegions: regions, allTradeRegions: tradeRegions, regionsLoading: false });
     } catch {
       set({ regionsLoading: false });
     }
@@ -82,6 +98,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
     // 비교함 변경 즉시 차트 데이터 갱신 (별도 "비교하기" 없이도 바로 반영)
     void get().loadWeeklyData();
+    void get().loadTradeData();
   },
 
   removeRegion: (region: string) => {
@@ -92,6 +109,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       regionLabels: restLabels,
     });
     void get().loadWeeklyData();
+    void get().loadTradeData();
   },
 
   clearRegions: () => set({ selectedRegions: [], regionLabels: {} }),
@@ -116,10 +134,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  loadDates: async () => {
+  loadTradeData: async () => {
+    const { selectedRegions } = get();
+    if (selectedRegions.length === 0) {
+      set({ tradeData: [] });
+      return;
+    }
+    set({ tradeLoading: true });
     try {
-      const dates = await weeklyLocal.getDates();
-      set({ allDates: dates });
+      const data = await weeklyTradeLocal.getTradeData(selectedRegions);
+      set({ tradeData: data, tradeLoading: false });
+    } catch {
+      set({ tradeLoading: false });
+    }
+  },
+
+  loadDates: async () => {
+    // 한쪽이 실패해도 다른 쪽은 로드되도록 분리
+    try {
+      set({ allDates: await weeklyLocal.getDates() });
+    } catch {
+      // ignore
+    }
+    try {
+      set({ allTradeDates: await weeklyTradeLocal.getDates() });
     } catch {
       // ignore
     }

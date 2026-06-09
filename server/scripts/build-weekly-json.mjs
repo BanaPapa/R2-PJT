@@ -22,6 +22,17 @@ const SHEET_METRIC = {
 };
 const METRIC_KEYS = ['saleIndex', 'jeonseIndex', 'saleChange', 'jeonseChange'];
 
+// 거래지표 4개 시트(대지역/집계만). 지역마다 3개 하위컬럼이고 그중 3번째(시작+2)가 지수값.
+// 데이터는 row4부터(시세 시트는 row3부터). 별도 파일 kb-weekly-trade.json으로 출력.
+const TRADE_SHEET_METRIC = {
+  '5.매수우위': 'buyerAdvantage',
+  '6.매매거래활발': 'saleActivity',
+  '7.전세수급': 'jeonseSupply',
+  '8.전세거래활발': 'jeonseActivity',
+};
+const TRADE_METRIC_KEYS = ['buyerAdvantage', 'saleActivity', 'jeonseSupply', 'jeonseActivity'];
+const TRADE_OUT = resolve(REPO_ROOT, 'public', 'data', 'kb-weekly-trade.json');
+
 // 시도 별칭 → KB Land 표준명. 엑셀은 시트/지역마다 약칭("경북")과 정식명("경상북도")을 혼용하므로
 // 반드시 정규화해야 셀렉터(KB Land API)의 키와 일치한다. 정규화 실패 시 하위 도시들이
 // 직전 시도로 잘못 귀속되는 치명적 버그 발생(예: 경북 도시들이 전라남도로 흡수됨).
@@ -71,6 +82,71 @@ function buildColumnKeys(headerRow) {
     }
   }
   return keys;
+}
+
+// 거래지표 헤더(row1): 지역명이 3컬럼 그룹의 시작 컬럼에 있고, 지수값은 시작+2 컬럼.
+// 반환: 지수값 컬럼인덱스 → 정규화된 대지역 키
+function buildTradeColumnKeys(headerRow) {
+  const keys = {};
+  for (let c = 1; c < headerRow.length; c++) {
+    const raw = headerRow[c];
+    const n = raw == null ? '' : String(raw).trim();
+    if (!n) continue;
+    const name = n.split(/\s+/)[0]; // "전국 Total" → "전국"
+    const canonical = SIDO_ALIAS[name] ?? name; // 집계/시도 모두 이미 표준명
+    keys[c + 2] = canonical;
+  }
+  return keys;
+}
+
+// 거래지표 시트들을 파싱해 kb-weekly-trade.json 생성 (시세 빌드와 독립)
+async function buildTrade(wb) {
+  const acc = new Map();
+  const allDates = new Set();
+
+  for (const [sheetName, metric] of Object.entries(TRADE_SHEET_METRIC)) {
+    const sheet = wb.Sheets[sheetName];
+    if (!sheet) { console.warn('시트 없음:', sheetName); continue; }
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+    if (rows.length < 5) continue;
+    const colKeys = buildTradeColumnKeys(rows[1] ?? []);
+
+    for (let r = 4; r < rows.length; r++) {
+      const row = rows[r] ?? [];
+      const date = serialToDate(row[0]);
+      if (!date) continue;
+      allDates.add(date);
+      for (const [cStr, key] of Object.entries(colKeys)) {
+        const v = row[Number(cStr)];
+        if (typeof v !== 'number' || isNaN(v)) continue;
+        let byMetric = acc.get(key);
+        if (!byMetric) { byMetric = {}; acc.set(key, byMetric); }
+        let m = byMetric[metric];
+        if (!m) { m = new Map(); byMetric[metric] = m; }
+        m.set(date, v);
+      }
+    }
+  }
+
+  const dates = [...allDates].sort();
+  const dateIdx = new Map(dates.map((d, i) => [d, i]));
+  const data = {};
+  for (const [key, byMetric] of acc) {
+    const series = {};
+    for (const mk of TRADE_METRIC_KEYS) {
+      const arr = new Array(dates.length).fill(null);
+      const m = byMetric[mk];
+      if (m) for (const [date, v] of m) arr[dateIdx.get(date)] = v;
+      series[mk] = arr;
+    }
+    data[key] = series;
+  }
+
+  await mkdir(dirname(TRADE_OUT), { recursive: true });
+  const out = JSON.stringify({ dates, data });
+  await writeFile(TRADE_OUT, out);
+  console.log(`완료(거래지표): ${TRADE_OUT}`);
+  console.log(`지역 ${Object.keys(data).length}개 · 날짜 ${dates.length}개 (${dates[0]}~${dates[dates.length - 1]}) · ${(out.length / 1e6).toFixed(2)} MB`);
 }
 
 async function resolveInput() {
@@ -135,6 +211,8 @@ async function main() {
   await writeFile(OUT, out);
   console.log(`완료: ${OUT}`);
   console.log(`지역(키) ${Object.keys(data).length}개 · 날짜 ${dates.length}개 (${dates[0]}~${dates[dates.length - 1]}) · ${(out.length / 1e6).toFixed(2)} MB`);
+
+  await buildTrade(wb);
 }
 
 main().catch(e => { console.error('빌드 실패:', e.message); process.exit(1); });

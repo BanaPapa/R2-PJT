@@ -9,13 +9,22 @@ import type { MonthlyMetricKey } from '../config';
 
 export type ViewMode = 'weekly' | 'monthly';
 export type MonthlySubTab = 'series' | 'period' | 'region';
+// 주간 하위 탭: 시세지표(지수·증감·누적) / 거래지표(매수우위·수급·거래활발)
+export type WeeklyTab = 'price' | 'trade';
 
 const MAX_SERIES = 5;
 
 interface MonthlyStore {
   mode: ViewMode;
+  weeklyTab: WeeklyTab;
   subTab: MonthlySubTab;
   metric: MonthlyMetricKey;
+
+  // 거래지표 보기 옵션
+  tradeMaOn: boolean;
+  tradeMaWindow: number;
+  // 그래프별 Y축 범위(차트 id → {min,max}). 없으면 기본 0~200.
+  tradeYRanges: Record<string, { min: number; max: number }>;
 
   regionTree: RegionNode[];
   treeLoading: boolean;
@@ -37,6 +46,11 @@ interface MonthlyStore {
   compareLoading: boolean;
 
   setMode: (mode: ViewMode) => void;
+  setWeeklyTab: (tab: WeeklyTab) => void;
+  setTradeMaOn: (on: boolean) => void;
+  setTradeMaWindow: (w: number) => void;
+  setTradeYRange: (id: string, min: number, max: number) => void;
+  resetTradeYRanges: () => void;
   setSubTab: (tab: MonthlySubTab) => void;
   setMetric: (metric: MonthlyMetricKey) => void;
   loadTree: () => Promise<void>;
@@ -48,8 +62,13 @@ interface MonthlyStore {
 
 export const useMonthlyStore = create<MonthlyStore>((set, get) => ({
   mode: 'weekly',
+  weeklyTab: 'price',
   subTab: 'series',
   metric: 'saleAptIndex',
+
+  tradeMaOn: true,
+  tradeMaWindow: 13,
+  tradeYRanges: {},
 
   regionTree: [],
   treeLoading: false,
@@ -73,6 +92,13 @@ export const useMonthlyStore = create<MonthlyStore>((set, get) => ({
       get().loadTree();
     }
   },
+
+  setWeeklyTab: tab => set({ weeklyTab: tab }),
+  setTradeMaOn: on => set({ tradeMaOn: on }),
+  setTradeMaWindow: w => set({ tradeMaWindow: w }),
+  setTradeYRange: (id, min, max) =>
+    set(s => ({ tradeYRanges: { ...s.tradeYRanges, [id]: { min, max } } })),
+  resetTradeYRanges: () => set({ tradeYRanges: {} }),
 
   setSubTab: tab => set({ subTab: tab }),
 
