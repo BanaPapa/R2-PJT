@@ -25,20 +25,19 @@ model WeeklyData {
 }
 
 model MonthlyData {
-  id             Int      @id @default(autoincrement())
-  date           String   // YYYY-MM (or YYYY-MM-DD for first of month)
-  region         String
-  dataType       String   // "housing" | "officetel"
-  saleChange     Float?
-  jeonseChange   Float?
-  saleIndex      Float?
-  jeonseIndex    Float?
-  buyerAdvantage Float?
-  saleActivity   Float?
-  jeonseSupply   Float?
-  jeonseActivity Float?
-  @@unique([date, region, dataType])
-  @@index([region, date])
+  id                 Int     @id @default(autoincrement())
+  date               String  // YYYY-MM
+  regionPath         String  // 계층 고유 식별자, 예: "전국>경기도>수원시>장안구"
+  region             String  // leaf 표시명, 예: "장안구"
+  level              Int     // 1=전국 … 깊을수록 큼
+  parentPath         String? // 상위 regionPath (폴백용)
+  saleAptIndex       Float?  // 2.매매APT - 아파트 매매가격지수
+  jeonseAptIndex     Float?  // 6.전세APT - 아파트 전세가격지수
+  aptSaleJeonseRatio Float?  // 28.아파트매매전세비 (%)
+  aptAvgSalePerM2    Float?  // 47.㎡당아파트평균매매 (만원/㎡)
+  aptAvgJeonsePerM2  Float?  // 48.㎡당아파트평균전세 (만원/㎡)
+  @@unique([date, regionPath])
+  @@index([regionPath, date])
   @@map("monthly_data")
 }
 

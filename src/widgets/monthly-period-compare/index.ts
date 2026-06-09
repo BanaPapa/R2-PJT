@@ -1,0 +1,1 @@
+export { MonthlyPeriodCompare } from './MonthlyPeriodCompare';

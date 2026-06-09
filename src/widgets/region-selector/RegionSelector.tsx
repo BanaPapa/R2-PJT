@@ -1,63 +1,174 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../shared/lib/store';
 import { MAX_REGIONS, CHART_COLORS } from '../../shared/config';
+import { AGGREGATE_REGIONS } from '../../shared/config/kb-aggregates';
+import { getRegions, peekRegions, prefetchRegions, type RegionItem } from '../../shared/lib/kb-region-api';
 
-const REGION_CATEGORIES = [
-  {
-    id: 'all',
-    label: '전국',
-    regions: ['전국'],
-  },
-  {
-    id: 'seoul',
-    label: '서울',
-    regions: ['서울특별시', '강북14개구', '강남11개구'],
-  },
-  {
-    id: 'metro',
-    label: '수도권',
-    regions: ['수도권', '경기도', '인천광역시'],
-  },
-  {
-    id: 'major',
-    label: '광역시',
-    regions: [
-      '6개광역시',
-      '부산광역시',
-      '대구광역시',
-      '광주광역시',
-      '대전광역시',
-      '울산광역시',
-    ],
-  },
-  {
-    id: 'other',
-    label: '기타',
-    regions: ['세종특별자치시', '기타지방'],
-  },
-];
+// 대지역 선택값 인코딩: 집계지역은 "agg:전국", 시도는 "sido:41".
+type LargeValue = string;
+
+interface MidOption {
+  key: string;         // 주간 데이터 키 (예: "서울특별시|강남구", "경기도|덕양구")
+  label: string;       // 드롭다운 표시 (대지역 중복 제거: "강남구", "고양시 덕양구")
+  basketLabel: string; // 비교함/범례 표시 (충돌 구분: "서울특별시 강남구", "고양시 덕양구")
+  available: boolean;  // 주간 데이터에 존재하는가
+}
+
+// KB Land API level-2 결과를 주간용 중지역 목록으로 변환.
+// 일반구가 있는 시(예: "고양시 덕양구")는 → "고양시"(시 집계, 합성) + "고양시 덕양구"(구) 로 펼친다.
+// 주간 데이터 키는 "대지역|지역명" 복합키(예: "경기도|덕양구") — 시도별 중복 구명 충돌 방지.
+function buildMidOptions(level2: RegionItem[], available: Set<string>, sido: string): MidOption[] {
+  const out: MidOption[] = [];
+  const seenCity = new Set<string>();
+  for (const item of level2) {
+    const name = item.name.trim();
+    const parts = name.split(/\s+/);
+    if (parts.length >= 2) {
+      // "고양시 덕양구" — 부모 시(고양시)는 시도가 아니므로 중복 아님. 드롭다운/비교함 모두 그대로.
+      const city = parts[0]!;                 // "고양시"
+      const gu = parts.slice(1).join(' ');    // "덕양구"
+      if (!seenCity.has(city)) {
+        seenCity.add(city);
+        const cityKey = `${sido}|${city}`;
+        out.push({ key: cityKey, label: city, basketLabel: city, available: available.has(cityKey) });
+      }
+      const guKey = `${sido}|${gu}`;
+      out.push({ key: guKey, label: name, basketLabel: name, available: available.has(guKey) });
+    } else {
+      // 광역시 직속 구(예: "강남구","남구") — 대지역에 이미 시도가 있으니 드롭다운엔 이름만.
+      // 비교함/범례에선 여러 시도에 같은 구명(중구·남구 등) 충돌하므로 시도를 붙여 구분.
+      const key = `${sido}|${name}`;
+      const basketLabel = name.endsWith('구') ? `${sido} ${name}` : name;
+      out.push({ key, label: name, basketLabel, available: available.has(key) });
+    }
+  }
+  return out;
+}
 
 export const RegionSelector: React.FC = () => {
   const {
     allRegions,
     selectedRegions,
-    regionsLoading,
-    toggleRegion,
+    regionLabels,
+    addRegion,
+    removeRegion,
     clearRegions,
     fromDate,
     toDate,
     setFromDate,
     setToDate,
+    baseDate,
+    setBaseDate,
+    allDates,
     loadWeeklyData,
     dataLoading,
     latestDate,
     totalRecords,
   } = useAppStore();
 
-  const [activeCategory, setActiveCategory] = useState(REGION_CATEGORIES[0].id);
+  const availableSet = useMemo(() => new Set(allRegions), [allRegions]);
 
-  const currentCategory =
-    REGION_CATEGORIES.find(c => c.id === activeCategory) ?? REGION_CATEGORIES[0];
+  // 대지역(시도) 목록 — KB Land API level 1
+  const [sidoList, setSidoList] = useState<RegionItem[]>([]);
+  const [largeValue, setLargeValue] = useState<LargeValue>('');
+
+  // 중지역 — KB Land API level 2 (선택 시도 기준)
+  const [midOptions, setMidOptions] = useState<MidOption[]>([]);
+  const [midKey, setMidKey] = useState<string>('');
+  const [loadingMid, setLoadingMid] = useState(false);
+
+  // 시도 목록 로드 (+ 캐시 즉시 반영)
+  useEffect(() => {
+    let active = true;
+    const cached = peekRegions(1);
+    if (cached) {
+      setSidoList(cached);
+      for (const s of cached) prefetchRegions(2, s.code);
+      return;
+    }
+    getRegions(1)
+      .then(list => {
+        if (!active) return;
+        setSidoList(list);
+        for (const s of list) prefetchRegions(2, s.code);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedSido = useMemo(() => {
+    if (!largeValue.startsWith('sido:')) return null;
+    const code = largeValue.slice(5);
+    return sidoList.find(s => s.code === code) ?? null;
+  }, [largeValue, sidoList]);
+
+  const selectedAggregate = useMemo(() => {
+    if (!largeValue.startsWith('agg:')) return null;
+    const key = largeValue.slice(4);
+    return AGGREGATE_REGIONS.find(a => a.weeklyKey === key) ?? null;
+  }, [largeValue]);
+
+  // 시도 선택 시 중지역 로드
+  useEffect(() => {
+    setMidKey('');
+    setMidOptions([]);
+    if (!selectedSido) return;
+
+    const cached = peekRegions(2, selectedSido.code);
+    if (cached) {
+      setMidOptions(buildMidOptions(cached, availableSet, selectedSido.name));
+      return;
+    }
+    setLoadingMid(true);
+    let active = true;
+    getRegions(2, selectedSido.code)
+      .then(list => {
+        if (active) setMidOptions(buildMidOptions(list, availableSet, selectedSido.name));
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingMid(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedSido, availableSet]);
+
+  // 추가 대상 결정: 중지역 선택 시 그것, 아니면 시도 자체 / 집계지역.
+  const target = useMemo<{ key: string; display: string; available: boolean } | null>(() => {
+    if (selectedAggregate) {
+      return {
+        key: selectedAggregate.weeklyKey,
+        display: selectedAggregate.label,
+        available: availableSet.has(selectedAggregate.weeklyKey),
+      };
+    }
+    if (selectedSido) {
+      if (midKey) {
+        const opt = midOptions.find(m => m.key === midKey);
+        if (opt) return { key: opt.key, display: opt.basketLabel, available: opt.available };
+      }
+      return {
+        key: selectedSido.name,
+        display: selectedSido.name,
+        available: availableSet.has(selectedSido.name),
+      };
+    }
+    return null;
+  }, [selectedAggregate, selectedSido, midKey, midOptions, availableSet]);
+
+  const alreadyAdded = !!target && selectedRegions.includes(target.key);
+  const isFull = selectedRegions.length >= MAX_REGIONS;
+  const canAdd = !!target && target.available && !alreadyAdded && !isFull;
+
+  const handleAdd = () => {
+    if (!target || !canAdd) return;
+    addRegion(target.key, target.display);
+  };
+
+  const midDisabled = !selectedSido || loadingMid;
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -76,7 +187,7 @@ export const RegionSelector: React.FC = () => {
         </div>
 
         {/* Date Range */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs text-gray-400 mb-1">시작일</label>
             <input
@@ -97,129 +208,158 @@ export const RegionSelector: React.FC = () => {
           </div>
         </div>
 
-        {/* Selected chips */}
-        {selectedRegions.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-3">
+        {/* 지수 기준일 — 선택한 주의 매매·전세지수를 100.0으로 리베이스 */}
+        <div className="mt-3">
+          <label className="block text-xs text-gray-400 mb-1">지수 기준일 (이 주 = 100.0)</label>
+          <select
+            value={baseDate}
+            onChange={e => setBaseDate(e.target.value)}
+            className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+          >
+            {allDates.slice().reverse().map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Cascading region selector */}
+      <div className="p-4 flex flex-col gap-3 border-b border-gray-100">
+        {/* 대지역 */}
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">대지역 (시/도 · 집계)</label>
+          <select
+            value={largeValue}
+            onChange={e => setLargeValue(e.target.value)}
+            className="w-full text-sm border border-gray-200 rounded-md px-2 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">선택</option>
+            <optgroup label="집계 지역">
+              {AGGREGATE_REGIONS.map(a => (
+                <option key={a.weeklyKey} value={`agg:${a.weeklyKey}`} disabled={!availableSet.has(a.weeklyKey)}>
+                  {a.label}
+                  {availableSet.has(a.weeklyKey) ? '' : ' (데이터 없음)'}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="시 / 도">
+              {sidoList.map(s => (
+                <option key={s.code} value={`sido:${s.code}`}>
+                  {s.name}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </div>
+
+        {/* 중지역 */}
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">중지역 (시/군/구)</label>
+          <select
+            value={midKey}
+            disabled={midDisabled}
+            onChange={e => setMidKey(e.target.value)}
+            className="w-full text-sm border border-gray-200 rounded-md px-2 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-300"
+          >
+            <option value="">
+              {!selectedSido
+                ? selectedAggregate
+                  ? '집계 지역은 중지역 없음'
+                  : '대지역을 먼저 선택'
+                : loadingMid
+                ? '불러오는 중...'
+                : `${selectedSido.name} 전체 또는 시/군/구 선택`}
+            </option>
+            {midOptions.map(m => (
+              <option key={m.key} value={m.key} disabled={!m.available}>
+                {m.label}
+                {m.available ? '' : ' (데이터 없음)'}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 소지역 — 주간은 항상 비활성 */}
+        <div>
+          <label className="block text-xs text-gray-300 mb-1">소지역 (읍/면/동)</label>
+          <select
+            disabled
+            value=""
+            className="w-full text-sm border border-gray-200 rounded-md px-2 py-2 bg-gray-50 text-gray-300"
+          >
+            <option value="">주간 시계열 미지원</option>
+          </select>
+        </div>
+
+        {/* 추가 버튼 */}
+        <button
+          onClick={handleAdd}
+          disabled={!canAdd}
+          title={
+            isFull
+              ? `비교함이 가득 찼습니다 (최대 ${MAX_REGIONS}개)`
+              : target && !target.available
+              ? '주간 데이터가 없는 지역입니다'
+              : alreadyAdded
+              ? '이미 추가된 지역입니다'
+              : undefined
+          }
+          className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:cursor-not-allowed text-white disabled:text-gray-400 text-sm font-semibold rounded-lg transition-colors"
+        >
+          {target
+            ? alreadyAdded
+              ? '이미 추가됨'
+              : !target.available
+              ? '데이터 없음'
+              : `추가: ${target.display}`
+            : '추가'}
+        </button>
+      </div>
+
+      {/* 비교함 */}
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-semibold text-gray-600">
+            비교함 ({selectedRegions.length}/{MAX_REGIONS})
+          </h3>
+        </div>
+
+        {selectedRegions.length === 0 ? (
+          <p className="text-xs text-gray-400 py-4 text-center">
+            위에서 지역을 선택해 추가하세요
+          </p>
+        ) : (
+          <div className="space-y-1.5 mb-3">
             {selectedRegions.map((region, idx) => (
-              <span
+              <div
                 key={region}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-white"
-                style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 bg-gray-50 text-sm"
               >
-                {region}
+                <span
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}
+                />
+                <span className="text-gray-700 truncate">{regionLabels[region] ?? region}</span>
                 <button
-                  onClick={() => toggleRegion(region)}
-                  className="hover:opacity-75 leading-none ml-0.5"
-                  aria-label={`${region} 제거`}
+                  onClick={() => removeRegion(region)}
+                  className="ml-auto text-gray-400 hover:text-red-500 leading-none text-base"
+                  aria-label={`${regionLabels[region] ?? region} 제거`}
                 >
                   ×
                 </button>
-              </span>
+              </div>
             ))}
           </div>
         )}
 
-        {/* Compare button */}
         <button
           onClick={loadWeeklyData}
           disabled={selectedRegions.length === 0 || dataLoading}
           className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:cursor-not-allowed text-white disabled:text-gray-400 text-sm font-semibold rounded-lg transition-colors"
         >
-          {dataLoading
-            ? '로딩 중...'
-            : `비교하기 (${selectedRegions.length}/${MAX_REGIONS})`}
+          {dataLoading ? '로딩 중...' : '비교하기'}
         </button>
       </div>
-
-      {/* Two-panel region selector */}
-      {regionsLoading ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
-          지역 목록 로딩 중...
-        </div>
-      ) : (
-        <div className="flex flex-1 overflow-hidden">
-          {/* Left: Category tabs */}
-          <nav className="w-[72px] flex-shrink-0 border-r border-gray-100 overflow-y-auto bg-gray-50">
-            {REGION_CATEGORIES.map(cat => {
-              const availableCount = cat.regions.filter(r =>
-                allRegions.includes(r)
-              ).length;
-              const isActive = activeCategory === cat.id;
-
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setActiveCategory(cat.id)}
-                  className={`w-full py-3.5 px-1 text-center transition-all border-l-[3px] ${
-                    isActive
-                      ? 'bg-white border-blue-500 text-blue-700'
-                      : 'border-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                  }`}
-                >
-                  <span className={`block text-xs font-semibold ${isActive ? 'text-blue-700' : ''}`}>
-                    {cat.label}
-                  </span>
-                  <span
-                    className={`block text-[10px] mt-0.5 ${
-                      isActive ? 'text-blue-400' : 'text-gray-400'
-                    }`}
-                  >
-                    {availableCount}개
-                  </span>
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* Right: Region list */}
-          <div className="flex-1 overflow-y-auto p-2">
-            <div className="space-y-1">
-              {currentCategory.regions.map(region => {
-                const isAvailable = allRegions.includes(region);
-                const selIdx = selectedRegions.indexOf(region);
-                const isSelected = selIdx >= 0;
-                const isMaxed = selectedRegions.length >= MAX_REGIONS && !isSelected;
-                const isDisabled = !isAvailable || isMaxed;
-
-                return (
-                  <button
-                    key={region}
-                    onClick={() => !isDisabled && toggleRegion(region)}
-                    disabled={isDisabled}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all ${
-                      !isAvailable
-                        ? 'text-gray-300 cursor-not-allowed'
-                        : isSelected
-                        ? 'text-white font-semibold shadow-sm'
-                        : isMaxed
-                        ? 'text-gray-400 cursor-not-allowed bg-gray-50'
-                        : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700 border border-transparent hover:border-blue-100'
-                    }`}
-                    style={
-                      isSelected
-                        ? { backgroundColor: CHART_COLORS[selIdx % CHART_COLORS.length] }
-                        : {}
-                    }
-                  >
-                    <div className="flex items-center justify-between">
-                      <span>{region}</span>
-                      <span className="text-xs">
-                        {!isAvailable ? (
-                          <span className="text-gray-300 font-normal">미지원</span>
-                        ) : isSelected ? (
-                          <span className="w-4 h-4 inline-flex items-center justify-center rounded-full bg-white bg-opacity-30 text-[10px] font-bold">
-                            {selIdx + 1}
-                          </span>
-                        ) : null}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Footer */}
       <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50">

@@ -23,6 +23,25 @@ export const METRICS = [
 
 export type MetricKey = typeof METRICS[number]['key'];
 
+// 주간 시계열: 요청된 4개 시트(매매지수·전세지수·매매증감·전세증감)만 차트로 표시.
+export const WEEKLY_METRICS = [
+  { key: 'saleIndex', label: '매매지수', unit: '' },
+  { key: 'jeonseIndex', label: '전세지수', unit: '' },
+  { key: 'saleChange', label: '매매증감', unit: '%' },
+  { key: 'jeonseChange', label: '전세증감', unit: '%' },
+] as const satisfies readonly { key: MetricKey; label: string; unit: string }[];
+
+// 월간 지표 (5개 시트). 단위 표기는 차트/툴팁에 사용.
+export const MONTHLY_METRICS = [
+  { key: 'saleAptIndex', label: '아파트 매매가격지수', unit: '' },
+  { key: 'jeonseAptIndex', label: '아파트 전세가격지수', unit: '' },
+  { key: 'aptSaleJeonseRatio', label: '아파트 매매대비 전세비', unit: '%' },
+  { key: 'aptAvgSalePerM2', label: '㎡당 평균 매매가', unit: '만원/㎡' },
+  { key: 'aptAvgJeonsePerM2', label: '㎡당 평균 전세가', unit: '만원/㎡' },
+] as const;
+
+export type MonthlyMetricKey = typeof MONTHLY_METRICS[number]['key'];
+
 // Region groupings
 export const REGION_GROUPS: Record<string, string[]> = {
   '전국': ['전국'],

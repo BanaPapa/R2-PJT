@@ -1,5 +1,6 @@
 import cron from 'node-cron';
-import { collectWeekly, collectMonthly } from '../services/data-collector.service.js';
+import { collectWeekly } from '../services/data-collector.service.js';
+import { collectMonthlyFromFile } from '../services/monthly-collector.service.js';
 
 export function startDataCollectionScheduler() {
   console.log('[Scheduler] Starting KB data collection scheduler...');
@@ -26,7 +27,7 @@ export function startDataCollectionScheduler() {
   cron.schedule('0 9 1 * *', async () => {
     console.log('[Scheduler] Running monthly collection...');
     try {
-      const result = await collectMonthly('monthly-housing');
+      const result = await collectMonthlyFromFile();
       if (result.success) {
         console.log('[Scheduler] Monthly collection done:', result.message);
       } else {

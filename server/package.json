@@ -8,7 +8,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "scheduler": "tsx src/scheduler/index.ts"
+    "scheduler": "tsx src/scheduler/index.ts",
+    "import:monthly": "tsx src/scripts/import-monthly.ts",
+    "build:weekly": "node scripts/build-weekly-json.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",

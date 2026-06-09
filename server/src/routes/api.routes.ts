@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { collectWeekly, collectMonthly, getCollectionStatus } from '../services/data-collector.service.js';
+import { collectWeekly, getCollectionStatus } from '../services/data-collector.service.js';
+import { collectMonthlyFromFile } from '../services/monthly-collector.service.js';
+import {
+  getRegionTree,
+  getTimeseries,
+  getRegionCompare,
+  isValidMetric,
+} from '../services/monthly-region.service.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -59,33 +66,53 @@ router.get('/data/weekly', async (req, res) => {
 });
 
 /**
- * GET /api/data/monthly?regions=서울특별시&dataType=housing&from=2023-01-01&to=2026-05-25
+ * GET /api/monthly/regions - 계층형 지역 트리
  */
-router.get('/data/monthly', async (req, res) => {
+router.get('/monthly/regions', async (_req, res) => {
   try {
-    const { regions, dataType, from, to } = req.query as Record<string, string>;
+    const tree = await getRegionTree();
+    res.json({ success: true, data: tree });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
 
-    const regionList = regions ? regions.split(',').map(r => r.trim()).filter(Boolean) : [];
-
-    const where: any = {};
-    if (regionList.length > 0) {
-      where.region = { in: regionList };
+/**
+ * GET /api/monthly/timeseries?regionPath=전국&metric=saleAptIndex
+ * regionPath 콤마 구분으로 다중 지역 허용. 지역별 폴백 적용.
+ */
+router.get('/monthly/timeseries', async (req, res) => {
+  try {
+    const { regionPath, metric } = req.query as Record<string, string>;
+    if (!regionPath || !metric || !isValidMetric(metric)) {
+      res.status(400).json({ success: false, error: 'regionPath, metric(유효값) 필요' });
+      return;
     }
-    if (dataType) {
-      where.dataType = dataType;
-    }
-    if (from || to) {
-      where.date = {};
-      if (from) where.date.gte = from;
-      if (to) where.date.lte = to;
-    }
+    const paths = regionPath.split(',').map(p => p.trim()).filter(Boolean);
+    const series = await Promise.all(
+      paths.map(async p => {
+        const result = await getTimeseries(p, metric);
+        return { requestedPath: p, ...(result ?? { resolved: null, data: [] }) };
+      }),
+    );
+    res.json({ success: true, data: series });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
 
-    const data = await prisma.monthlyData.findMany({
-      where,
-      orderBy: [{ region: 'asc' }, { date: 'asc' }],
-    });
-
-    res.json({ success: true, data });
+/**
+ * GET /api/monthly/region-compare?metric=saleAptIndex&parentPath=전국>서울특별시&date=2026-05
+ */
+router.get('/monthly/region-compare', async (req, res) => {
+  try {
+    const { metric, parentPath, date } = req.query as Record<string, string>;
+    if (!parentPath || !metric || !isValidMetric(metric)) {
+      res.status(400).json({ success: false, error: 'parentPath, metric(유효값) 필요' });
+      return;
+    }
+    const result = await getRegionCompare(metric, parentPath, date || undefined);
+    res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
   }
@@ -112,7 +139,7 @@ router.post('/collection/trigger', async (req, res) => {
 
     let result;
     if (type === 'monthly') {
-      result = await collectMonthly('monthly-housing');
+      result = await collectMonthlyFromFile();
     } else {
       result = await collectWeekly();
     }

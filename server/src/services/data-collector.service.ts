@@ -30,21 +30,6 @@ async function bulkInsertWeekly(rows: DataRow[]): Promise<number> {
   return total;
 }
 
-async function bulkInsertMonthly(rows: DataRow[], dataType: string): Promise<number> {
-  let total = 0;
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    const valueSets = batch.map(r => {
-      const region = r.region.replace(/'/g, "''");
-      return `('${r.date}', '${region}', '${dataType}', ${nullableFloat(r.saleChange)}, ${nullableFloat(r.jeonseChange)}, ${nullableFloat(r.saleIndex)}, ${nullableFloat(r.jeonseIndex)}, ${nullableFloat(r.buyerAdvantage)}, ${nullableFloat(r.saleActivity)}, ${nullableFloat(r.jeonseSupply)}, ${nullableFloat(r.jeonseActivity)})`;
-    });
-    const sql = `INSERT OR IGNORE INTO monthly_data (date, region, dataType, saleChange, jeonseChange, saleIndex, jeonseIndex, buyerAdvantage, saleActivity, jeonseSupply, jeonseActivity) VALUES ${valueSets.join(', ')}`;
-    const result = await prisma.$executeRawUnsafe(sql);
-    total += result;
-  }
-  return total;
-}
-
 export async function collectWeekly(): Promise<{ success: boolean; message: string; recordCount?: number; error?: string }> {
   let logId: number | undefined;
 
@@ -104,54 +89,6 @@ export async function collectWeekly(): Promise<{ success: boolean; message: stri
     }
 
     return { success: false, message: 'Collection failed', error: errMsg };
-  }
-}
-
-export async function collectMonthly(dataType: 'monthly-housing' | 'monthly-officetel' = 'monthly-housing'): Promise<{ success: boolean; message: string; recordCount?: number; error?: string }> {
-  let logId: number | undefined;
-
-  try {
-    console.log(`[Collector] Fetching monthly file info (${dataType})...`);
-    const fileInfo = await getLatestFileInfo('monthly');
-
-    if (!fileInfo) {
-      return { success: false, message: 'No file info returned from KB API' };
-    }
-
-    const existing = await prisma.collectionLog.findFirst({
-      where: { fileName: fileInfo.originalFileName, status: 'success', dataType },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (existing) {
-      return { success: true, message: `Already up to date: ${fileInfo.originalFileName}` };
-    }
-
-    const log = await prisma.collectionLog.create({
-      data: { dataType, fileName: fileInfo.originalFileName, status: 'processing' },
-    });
-    logId = log.id;
-
-    const buffer = await downloadExcelFile(fileInfo);
-    const rows = parseWeeklyExcel(buffer);
-    const resolvedDataType = dataType === 'monthly-housing' ? 'housing' : 'officetel';
-    const totalInserted = await bulkInsertMonthly(rows, resolvedDataType);
-
-    await prisma.collectionLog.update({
-      where: { id: logId },
-      data: { status: 'success', recordCount: totalInserted },
-    });
-
-    return { success: true, message: `Collected ${totalInserted} records`, recordCount: totalInserted };
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    if (logId !== undefined) {
-      await prisma.collectionLog.update({
-        where: { id: logId },
-        data: { status: 'failed', errorMsg: errMsg },
-      }).catch(() => {});
-    }
-    return { success: false, message: 'Monthly collection failed', error: errMsg };
   }
 }
 
