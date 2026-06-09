@@ -4,7 +4,7 @@ import { RegionSelector } from '../widgets/region-selector';
 import { ChartDashboard } from '../widgets/chart-dashboard';
 import { TradeDashboard } from '../widgets/weekly-trade-dashboard';
 import { MonthlyRegionCascade } from '../widgets/monthly-region-cascade';
-import { MonthlyDashboard } from '../widgets/monthly-dashboard';
+import { MonthlyChartDashboard } from '../widgets/monthly-chart-dashboard';
 import { useAppStore } from '../shared/lib/store';
 import { useMonthlyStore, type ViewMode, type WeeklyTab } from '../shared/lib/monthly-store';
 
@@ -22,6 +22,17 @@ const WEEKLY_TABS: { key: WeeklyTab; label: string }[] = [
 const WeeklyView: FC = () => {
   const weeklyTab = useMonthlyStore(s => s.weeklyTab);
   return weeklyTab === 'price' ? <ChartDashboard /> : <TradeDashboard />;
+};
+
+// 월간 뷰: 주간과 동일한 시세지표 / 거래지표 탭 구조. 현재 시세지표만 구현.
+const MonthlyView: FC = () => {
+  const weeklyTab = useMonthlyStore(s => s.weeklyTab);
+  if (weeklyTab === 'price') return <MonthlyChartDashboard />;
+  return (
+    <div className="flex items-center justify-center h-64 bg-white rounded-xl border border-gray-200 shadow-sm">
+      <p className="text-gray-400 text-sm">월간 거래지표는 준비 중입니다</p>
+    </div>
+  );
 };
 
 const AppHeader: FC = () => {
@@ -56,10 +67,9 @@ const AppHeader: FC = () => {
             ))}
           </div>
 
-          {/* 주간 하위 탭: 시세지표 / 거래지표 */}
-          {mode === 'weekly' && (
-            <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
-              {WEEKLY_TABS.map(t => (
+          {/* 시세지표 / 거래지표 하위 탭 (주간·월간 공용) */}
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+            {WEEKLY_TABS.map(t => (
                 <button
                   key={t.key}
                   onClick={() => setWeeklyTab(t.key)}
@@ -70,8 +80,7 @@ const AppHeader: FC = () => {
                   {t.label}
                 </button>
               ))}
-            </div>
-          )}
+          </div>
         </div>
 
         <div className="hidden sm:flex items-center gap-4 text-xs text-gray-500">
@@ -148,7 +157,7 @@ const App: FC = () => {
 
           {/* Main Content */}
           <main className="flex-1 overflow-auto p-4 lg:p-6">
-            {mode === 'weekly' ? <WeeklyView /> : <MonthlyDashboard />}
+            {mode === 'weekly' ? <WeeklyView /> : <MonthlyView />}
           </main>
         </div>
       </div>

@@ -1,95 +1,77 @@
 import { create } from 'zustand';
-import { monthlyApi } from '../../entities/monthly-data';
-import type {
-  RegionNode,
-  MonthlySeries,
-  RegionCompareResult,
-} from '../../entities/monthly-data';
-import type { MonthlyMetricKey } from '../config';
+import { monthlyLocal } from '../../entities/monthly-data';
+import type { MonthlyPriceRegion } from '../../entities/monthly-data';
 
 export type ViewMode = 'weekly' | 'monthly';
-export type MonthlySubTab = 'series' | 'period' | 'region';
-// 주간 하위 탭: 시세지표(지수·증감·누적) / 거래지표(매수우위·수급·거래활발)
+// 시세지표(지수·증감·누적) / 거래지표 — 주간·월간 공용 헤더 탭
 export type WeeklyTab = 'price' | 'trade';
 
-const MAX_SERIES = 5;
+const MAX_REGIONS = 5;
 
 interface MonthlyStore {
+  // ── 주간/월간 공유 상태 ────────────────────────────────────────────
   mode: ViewMode;
   weeklyTab: WeeklyTab;
-  subTab: MonthlySubTab;
-  metric: MonthlyMetricKey;
-
-  // 거래지표 보기 옵션
+  // 주간 거래지표 보기 옵션 (주간 RegionSelector/TradeDashboard가 사용)
   tradeMaOn: boolean;
   tradeMaWindow: number;
-  // 그래프별 Y축 범위(차트 id → {min,max}). 없으면 기본 0~200.
   tradeYRanges: Record<string, { min: number; max: number }>;
 
-  regionTree: RegionNode[];
-  treeLoading: boolean;
-  treeError: string | null;
+  // ── 월간 시세지표 상태 (주간 store와 동일 구조) ──────────────────────
+  selectedRegions: string[]; // 선택 키(주간 형식)
+  regionLabels: Record<string, string>;
+  fromDate: string;
+  toDate: string;
+  baseDate: string; // 지수 리베이스 기준월 (이 달 = 100.0)
+  allDates: string[]; // 전체 월간 날짜축 (YYYY-MM)
 
-  // 시계열 (다중 지역)
-  seriesPaths: string[];
-  series: MonthlySeries[];
-  seriesLoading: boolean;
+  priceData: MonthlyPriceRegion[];
+  priceLoading: boolean;
+  priceError: string | null;
 
-  // 기간비교 (단일 지역)
-  periodPath: string | null;
-  periodSeries: MonthlySeries | null;
-  periodLoading: boolean;
-
-  // 지역비교 (상위 지역의 직계 하위 순위)
-  comparePath: string | null;
-  compareResult: RegionCompareResult | null;
-  compareLoading: boolean;
-
+  // ── 액션 ────────────────────────────────────────────────────────
   setMode: (mode: ViewMode) => void;
   setWeeklyTab: (tab: WeeklyTab) => void;
   setTradeMaOn: (on: boolean) => void;
   setTradeMaWindow: (w: number) => void;
   setTradeYRange: (id: string, min: number, max: number) => void;
   resetTradeYRanges: () => void;
-  setSubTab: (tab: MonthlySubTab) => void;
-  setMetric: (metric: MonthlyMetricKey) => void;
-  loadTree: () => Promise<void>;
-  toggleSeriesPath: (path: string) => void;
-  loadSeries: () => Promise<void>;
-  selectPeriodPath: (path: string) => void;
-  selectComparePath: (path: string) => void;
+
+  addRegion: (region: string, label?: string) => void;
+  removeRegion: (region: string) => void;
+  clearRegions: () => void;
+  setFromDate: (date: string) => void;
+  setToDate: (date: string) => void;
+  setBaseDate: (date: string) => void;
+  loadDates: () => Promise<void>;
+  loadPriceData: () => Promise<void>;
 }
+
+const DEFAULT_FROM = '2015-01';
 
 export const useMonthlyStore = create<MonthlyStore>((set, get) => ({
   mode: 'weekly',
   weeklyTab: 'price',
-  subTab: 'series',
-  metric: 'saleAptIndex',
 
   tradeMaOn: true,
   tradeMaWindow: 13,
   tradeYRanges: {},
 
-  regionTree: [],
-  treeLoading: false,
-  treeError: null,
+  selectedRegions: ['서울특별시', '전국'],
+  regionLabels: { 서울특별시: '서울특별시', 전국: '전국' },
+  fromDate: DEFAULT_FROM,
+  toDate: '',
+  baseDate: '',
+  allDates: [],
 
-  seriesPaths: [],
-  series: [],
-  seriesLoading: false,
-
-  periodPath: null,
-  periodSeries: null,
-  periodLoading: false,
-
-  comparePath: null,
-  compareResult: null,
-  compareLoading: false,
+  priceData: [],
+  priceLoading: false,
+  priceError: null,
 
   setMode: mode => {
     set({ mode });
-    if (mode === 'monthly' && get().regionTree.length === 0 && !get().treeLoading) {
-      get().loadTree();
+    if (mode === 'monthly' && get().allDates.length === 0) {
+      void get().loadDates().then(() => get().loadPriceData());
     }
   },
 
@@ -100,75 +82,61 @@ export const useMonthlyStore = create<MonthlyStore>((set, get) => ({
     set(s => ({ tradeYRanges: { ...s.tradeYRanges, [id]: { min, max } } })),
   resetTradeYRanges: () => set({ tradeYRanges: {} }),
 
-  setSubTab: tab => set({ subTab: tab }),
-
-  setMetric: metric => {
-    set({ metric });
-    const { subTab } = get();
-    if (subTab === 'series') get().loadSeries();
-    else if (subTab === 'period') {
-      const p = get().periodPath;
-      if (p) get().selectPeriodPath(p);
-    } else if (subTab === 'region') {
-      const p = get().comparePath;
-      if (p) get().selectComparePath(p);
-    }
+  addRegion: (region, label) => {
+    const { selectedRegions, regionLabels } = get();
+    if (selectedRegions.includes(region) || selectedRegions.length >= MAX_REGIONS) return;
+    set({
+      selectedRegions: [...selectedRegions, region],
+      regionLabels: { ...regionLabels, [region]: label ?? region },
+    });
+    void get().loadPriceData();
   },
 
-  loadTree: async () => {
-    set({ treeLoading: true, treeError: null });
+  removeRegion: region => {
+    const { selectedRegions, regionLabels } = get();
+    const { [region]: _removed, ...restLabels } = regionLabels;
+    set({ selectedRegions: selectedRegions.filter(r => r !== region), regionLabels: restLabels });
+    void get().loadPriceData();
+  },
+
+  clearRegions: () => set({ selectedRegions: [], regionLabels: {}, priceData: [] }),
+
+  setFromDate: date => set({ fromDate: date }),
+  setToDate: date => set({ toDate: date }),
+  setBaseDate: date => set({ baseDate: date }),
+
+  loadDates: async () => {
     try {
-      const tree = await monthlyApi.getRegionTree();
-      set({ regionTree: tree, treeLoading: false });
-    } catch (e) {
-      set({ treeError: e instanceof Error ? e.message : '지역 트리 로딩 실패', treeLoading: false });
-    }
-  },
-
-  toggleSeriesPath: path => {
-    const { seriesPaths } = get();
-    let next: string[];
-    if (seriesPaths.includes(path)) {
-      next = seriesPaths.filter(p => p !== path);
-    } else if (seriesPaths.length < MAX_SERIES) {
-      next = [...seriesPaths, path];
-    } else {
-      return;
-    }
-    set({ seriesPaths: next });
-    get().loadSeries();
-  },
-
-  loadSeries: async () => {
-    const { seriesPaths, metric } = get();
-    if (seriesPaths.length === 0) {
-      set({ series: [] });
-      return;
-    }
-    set({ seriesLoading: true });
-    try {
-      const series = await monthlyApi.getTimeseries(seriesPaths, metric);
-      set({ series, seriesLoading: false });
+      const dates = await monthlyLocal.getDates();
+      if (dates.length === 0) return;
+      const last = dates[dates.length - 1]!;
+      set(s => ({
+        allDates: dates,
+        // 미설정 값은 데이터 범위로 보정
+        toDate: s.toDate || last,
+        baseDate: s.baseDate || last,
+        fromDate: s.fromDate && s.fromDate >= dates[0]! ? s.fromDate : dates[0]!,
+      }));
     } catch {
-      set({ seriesLoading: false });
+      // ignore — 차트가 빈 상태를 처리
     }
   },
 
-  selectPeriodPath: path => {
-    set({ periodPath: path, periodLoading: true });
-    const { metric } = get();
-    monthlyApi
-      .getTimeseries([path], metric)
-      .then(s => set({ periodSeries: s[0] ?? null, periodLoading: false }))
-      .catch(() => set({ periodLoading: false }));
-  },
-
-  selectComparePath: path => {
-    set({ comparePath: path, compareLoading: true });
-    const { metric } = get();
-    monthlyApi
-      .getRegionCompare(metric, path)
-      .then(r => set({ compareResult: r, compareLoading: false }))
-      .catch(() => set({ compareLoading: false }));
+  loadPriceData: async () => {
+    const { selectedRegions } = get();
+    if (selectedRegions.length === 0) {
+      set({ priceData: [] });
+      return;
+    }
+    set({ priceLoading: true, priceError: null });
+    try {
+      const data = await monthlyLocal.getPriceData(selectedRegions);
+      set({ priceData: data, priceLoading: false });
+    } catch (e) {
+      set({
+        priceError: e instanceof Error ? e.message : '월간 데이터 로딩 실패',
+        priceLoading: false,
+      });
+    }
   },
 }));

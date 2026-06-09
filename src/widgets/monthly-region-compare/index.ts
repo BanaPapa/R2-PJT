@@ -1,1 +1,0 @@
-export { MonthlyRegionCompare } from './MonthlyRegionCompare';

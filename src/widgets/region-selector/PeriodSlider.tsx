@@ -11,12 +11,25 @@ import {
 
 const PRESETS = [1, 3, 5, 10]; // 최근 N년
 
+// 외부(월간) 주입용 props. 미지정 시 주간 store를 사용한다.
+interface PeriodSliderProps {
+  fromDate?: string;
+  toDate?: string;
+  setFromDate?: (d: string) => void;
+  setToDate?: (d: string) => void;
+  dates?: string[];
+}
+
 // 사이드바용 기간 선택기: 최근 1/3/5/10년 프리셋 + 얇은 드래그 막대 + 분기 눈금.
-// 활성 탭(시세/거래)에 맞는 날짜축을 사용한다.
-export const PeriodSlider: React.FC = () => {
-  const { fromDate, toDate, setFromDate, setToDate, allDates, allTradeDates } = useAppStore();
+// 주간은 활성 탭(시세/거래)에 맞는 날짜축을, 월간은 props로 주입된 날짜축을 사용한다.
+export const PeriodSlider: React.FC<PeriodSliderProps> = props => {
+  const weekly = useAppStore();
   const weeklyTab = useMonthlyStore(s => s.weeklyTab);
-  const dates = weeklyTab === 'trade' ? allTradeDates : allDates;
+  const fromDate = props.fromDate ?? weekly.fromDate;
+  const toDate = props.toDate ?? weekly.toDate;
+  const setFromDate = props.setFromDate ?? weekly.setFromDate;
+  const setToDate = props.setToDate ?? weekly.setToDate;
+  const dates = props.dates ?? (weeklyTab === 'trade' ? weekly.allTradeDates : weekly.allDates);
 
   const data = useMemo(() => dates.map(d => ({ date: d })), [dates]);
   const quarterTicks = useMemo(() => getQuarterTicks(dates, 6), [dates]);
@@ -33,10 +46,10 @@ export const PeriodSlider: React.FC = () => {
   const selectYears = (years: number) => {
     if (!dates.length) return;
     const last = dates[dates.length - 1]!;
-    const from = new Date(last);
-    from.setFullYear(from.getFullYear() - years);
-    let fromStr = from.toISOString().split('T')[0]!;
-    if (fromStr < dates[0]!) fromStr = dates[0]!;
+    const cutoff = new Date(last);
+    cutoff.setFullYear(cutoff.getFullYear() - years);
+    // 날짜 입력 단위(주간 YYYY-MM-DD / 월간 YYYY-MM)에 무관하게 실제 데이터 날짜로 스냅
+    const fromStr = dates.find(d => new Date(d).getTime() >= cutoff.getTime()) ?? dates[0]!;
     setFromDate(fromStr);
     setToDate(last);
   };

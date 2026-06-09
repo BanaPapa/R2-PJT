@@ -4,6 +4,7 @@ import { useMonthlyStore } from '../../shared/lib/monthly-store';
 import { MAX_REGIONS, CHART_COLORS } from '../../shared/config';
 import { AGGREGATE_REGIONS } from '../../shared/config/kb-aggregates';
 import { getRegions, peekRegions, prefetchRegions, type RegionItem } from '../../shared/lib/kb-region-api';
+import { buildMidOptions, type MidOption } from '../../shared/lib/kb-mid-options';
 import { InfoTip } from '../../shared/ui/InfoTip';
 import { PeriodSlider } from './PeriodSlider';
 
@@ -17,44 +18,6 @@ const TRADE_VIEW_HELP =
 
 // 대지역 선택값 인코딩: 집계지역은 "agg:전국", 시도는 "sido:41".
 type LargeValue = string;
-
-interface MidOption {
-  key: string;         // 주간 데이터 키 (예: "서울특별시|강남구", "경기도|덕양구")
-  label: string;       // 드롭다운 표시 (대지역 중복 제거: "강남구", "고양시 덕양구")
-  basketLabel: string; // 비교함/범례 표시 (충돌 구분: "서울특별시 강남구", "고양시 덕양구")
-  available: boolean;  // 주간 데이터에 존재하는가
-}
-
-// KB Land API level-2 결과를 주간용 중지역 목록으로 변환.
-// 일반구가 있는 시(예: "고양시 덕양구")는 → "고양시"(시 집계, 합성) + "고양시 덕양구"(구) 로 펼친다.
-// 주간 데이터 키는 "대지역|지역명" 복합키(예: "경기도|덕양구") — 시도별 중복 구명 충돌 방지.
-function buildMidOptions(level2: RegionItem[], available: Set<string>, sido: string): MidOption[] {
-  const out: MidOption[] = [];
-  const seenCity = new Set<string>();
-  for (const item of level2) {
-    const name = item.name.trim();
-    const parts = name.split(/\s+/);
-    if (parts.length >= 2) {
-      // "고양시 덕양구" — 부모 시(고양시)는 시도가 아니므로 중복 아님. 드롭다운/비교함 모두 그대로.
-      const city = parts[0]!;                 // "고양시"
-      const gu = parts.slice(1).join(' ');    // "덕양구"
-      if (!seenCity.has(city)) {
-        seenCity.add(city);
-        const cityKey = `${sido}|${city}`;
-        out.push({ key: cityKey, label: city, basketLabel: city, available: available.has(cityKey) });
-      }
-      const guKey = `${sido}|${gu}`;
-      out.push({ key: guKey, label: name, basketLabel: name, available: available.has(guKey) });
-    } else {
-      // 광역시 직속 구(예: "강남구","남구") — 대지역에 이미 시도가 있으니 드롭다운엔 이름만.
-      // 비교함/범례에선 여러 시도에 같은 구명(중구·남구 등) 충돌하므로 시도를 붙여 구분.
-      const key = `${sido}|${name}`;
-      const basketLabel = name.endsWith('구') ? `${sido} ${name}` : name;
-      out.push({ key, label: name, basketLabel, available: available.has(key) });
-    }
-  }
-  return out;
-}
 
 export const RegionSelector: React.FC = () => {
   const {
@@ -140,14 +103,14 @@ export const RegionSelector: React.FC = () => {
 
     const cached = peekRegions(2, selectedSido.code);
     if (cached) {
-      setMidOptions(buildMidOptions(cached, availableSet, selectedSido.name));
+      setMidOptions(buildMidOptions(cached, k => availableSet.has(k), selectedSido.name));
       return;
     }
     setLoadingMid(true);
     let active = true;
     getRegions(2, selectedSido.code)
       .then(list => {
-        if (active) setMidOptions(buildMidOptions(list, availableSet, selectedSido.name));
+        if (active) setMidOptions(buildMidOptions(list, k => availableSet.has(k), selectedSido.name));
       })
       .catch(() => {})
       .finally(() => {
