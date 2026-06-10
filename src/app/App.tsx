@@ -5,6 +5,8 @@ import { ChartDashboard } from '../widgets/chart-dashboard';
 import { TradeDashboard } from '../widgets/weekly-trade-dashboard';
 import { MonthlyRegionCascade } from '../widgets/monthly-region-cascade';
 import { MonthlyChartDashboard } from '../widgets/monthly-chart-dashboard';
+import { MonthlyTradeDashboard } from '../widgets/monthly-trade-dashboard';
+import { MonthlyMarketDashboard } from '../widgets/monthly-market-dashboard';
 import { useAppStore } from '../shared/lib/store';
 import { useMonthlyStore, type ViewMode, type WeeklyTab } from '../shared/lib/monthly-store';
 
@@ -13,26 +15,28 @@ const MODE_TABS: { key: ViewMode; label: string }[] = [
   { key: 'monthly', label: '월간' },
 ];
 
+// 시세·거래는 주간·월간 공용, 시장지표는 월간 전용.
 const WEEKLY_TABS: { key: WeeklyTab; label: string }[] = [
   { key: 'price', label: '시세지표' },
   { key: 'trade', label: '거래지표' },
+];
+const MONTHLY_TABS: { key: WeeklyTab; label: string }[] = [
+  ...WEEKLY_TABS,
+  { key: 'market', label: '시장지표' },
 ];
 
 // 주간 뷰: 시세지표 / 거래지표 (탭은 상단 헤더에 위치)
 const WeeklyView: FC = () => {
   const weeklyTab = useMonthlyStore(s => s.weeklyTab);
-  return weeklyTab === 'price' ? <ChartDashboard /> : <TradeDashboard />;
+  return weeklyTab === 'trade' ? <TradeDashboard /> : <ChartDashboard />;
 };
 
-// 월간 뷰: 주간과 동일한 시세지표 / 거래지표 탭 구조. 현재 시세지표만 구현.
+// 월간 뷰: 시세지표 / 거래지표 / 시장지표.
 const MonthlyView: FC = () => {
   const weeklyTab = useMonthlyStore(s => s.weeklyTab);
-  if (weeklyTab === 'price') return <MonthlyChartDashboard />;
-  return (
-    <div className="flex items-center justify-center h-64 bg-white rounded-xl border border-gray-200 shadow-sm">
-      <p className="text-gray-400 text-sm">월간 거래지표는 준비 중입니다</p>
-    </div>
-  );
+  if (weeklyTab === 'trade') return <MonthlyTradeDashboard />;
+  if (weeklyTab === 'market') return <MonthlyMarketDashboard />;
+  return <MonthlyChartDashboard />;
 };
 
 const AppHeader: FC = () => {
@@ -67,9 +71,9 @@ const AppHeader: FC = () => {
             ))}
           </div>
 
-          {/* 시세지표 / 거래지표 하위 탭 (주간·월간 공용) */}
+          {/* 시세 / 거래 / (월간) 시장 하위 탭 */}
           <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
-            {WEEKLY_TABS.map(t => (
+            {(mode === 'monthly' ? MONTHLY_TABS : WEEKLY_TABS).map(t => (
                 <button
                   key={t.key}
                   onClick={() => setWeeklyTab(t.key)}

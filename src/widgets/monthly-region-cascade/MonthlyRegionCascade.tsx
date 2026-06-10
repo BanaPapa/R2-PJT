@@ -5,7 +5,16 @@ import { AGGREGATE_REGIONS } from '../../shared/config/kb-aggregates';
 import { getRegions, peekRegions, prefetchRegions, type RegionItem } from '../../shared/lib/kb-region-api';
 import { buildMidOptions, type MidOption } from '../../shared/lib/kb-mid-options';
 import { monthlyLocal, type MonthlyRegionLookup } from '../../entities/monthly-data';
+import { InfoTip } from '../../shared/ui/InfoTip';
 import { PeriodSlider } from '../region-selector/PeriodSlider';
+
+// 이동평균 기간 선택지(월)
+const MA_OPTIONS = [3, 6, 12, 24];
+const MA_LABEL: Record<number, string> = { 3: '3개월', 6: '6개월', 12: '12개월(1년)', 24: '24개월(2년)' };
+const TRADE_VIEW_HELP =
+  '확산지수: 0~200 범위, 100이 중립. 100을 넘으면 강세(매수세·수요·거래 우위), 미만이면 약세.\n\n' +
+  '이동평균: 매월 오르내리는 값을 최근 N개월 평균으로 부드럽게 만든 추세선입니다. 단기 노이즈를 걸러 흐름을 보기 쉽게 하며, 기간이 짧을수록 민감·길수록 완만합니다.\n\n' +
+  'Y축 범위: 각 그래프 제목 우측에서 그래프별로 조정하며, [Y축 초기화]로 모두 기본(0~200)으로 되돌립니다.';
 
 // 대지역 선택값 인코딩: 집계지역은 "agg:전국", 시도는 "sido:41". (주간 RegionSelector와 동일)
 type LargeValue = string;
@@ -30,6 +39,27 @@ export const MonthlyRegionCascade: React.FC = () => {
     priceLoading,
   } = useMonthlyStore();
 
+  // 거래지표 탭에선 대지역(시/도·집계)만 선택 가능 + 보기 옵션을 여기서 제어 (주간 RegionSelector와 동일)
+  const {
+    weeklyTab,
+    allTradeRegions,
+    tradeMaOn,
+    tradeMaWindow,
+    setTradeMaOn,
+    setTradeMaWindow,
+    resetTradeYRanges,
+    loadTradeRegions,
+    baseLineOn,
+    setBaseLineOn,
+  } = useMonthlyStore();
+  const isTrade = weeklyTab === 'trade';
+  const isPrice = weeklyTab === 'price'; // 기준월 리베이스는 시세지표 전용 (시장지표는 절대값이라 제외)
+
+  // 거래지표 제공 지역(대지역/집계) 가용목록 로드
+  useEffect(() => {
+    void loadTradeRegions();
+  }, [loadTradeRegions]);
+
   // 주간 형식 선택 키 → 월간 regionPath 해석기 (데이터 없으면 undefined)
   const [lookup, setLookup] = useState<MonthlyRegionLookup | null>(null);
   useEffect(() => {
@@ -39,10 +69,14 @@ export const MonthlyRegionCascade: React.FC = () => {
       active = false;
     };
   }, []);
+  // 시세지표: 월간 룩업으로 가용 판정. 거래지표: 거래 JSON 제공 지역 집합으로 판정.
   const isAvail = useMemo(
     () => (key: string) => !!lookup && lookup.resolve(key) !== undefined,
     [lookup],
   );
+  const tradeAvailSet = useMemo(() => new Set(allTradeRegions), [allTradeRegions]);
+  const available = (key: string): boolean =>
+    isTrade ? tradeAvailSet.has(key) : isAvail(key);
 
   // 대지역(시도) 목록 — KB Land API level 1 (주간과 동일 소스·순서)
   const [sidoList, setSidoList] = useState<RegionItem[]>([]);
@@ -117,18 +151,20 @@ export const MonthlyRegionCascade: React.FC = () => {
       return {
         key: selectedAggregate.weeklyKey,
         display: selectedAggregate.label,
-        available: isAvail(selectedAggregate.weeklyKey),
+        available: available(selectedAggregate.weeklyKey),
       };
     }
     if (selectedSido) {
-      if (midKey) {
+      // 거래지표는 대지역만 — 중지역 선택은 무시하고 시도 자체를 대상으로 한다.
+      if (!isTrade && midKey) {
         const opt = midOptions.find(m => m.key === midKey);
         if (opt) return { key: opt.key, display: opt.basketLabel, available: opt.available };
       }
-      return { key: selectedSido.name, display: selectedSido.name, available: isAvail(selectedSido.name) };
+      return { key: selectedSido.name, display: selectedSido.name, available: available(selectedSido.name) };
     }
     return null;
-  }, [selectedAggregate, selectedSido, midKey, midOptions, isAvail]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAggregate, selectedSido, midKey, midOptions, isAvail, isTrade, tradeAvailSet]);
 
   const alreadyAdded = !!target && selectedRegions.includes(target.key);
   const isFull = selectedRegions.length >= MAX_REGIONS;
@@ -139,7 +175,7 @@ export const MonthlyRegionCascade: React.FC = () => {
     addRegion(target.key, target.display);
   };
 
-  const midDisabled = !selectedSido || loadingMid;
+  const midDisabled = !selectedSido || loadingMid || isTrade;
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -166,19 +202,69 @@ export const MonthlyRegionCascade: React.FC = () => {
           setToDate={setToDate}
         />
 
-        {/* 지수 기준월 — 지수 리베이스에 사용 */}
-        <div className="mt-3">
-          <label className="block text-xs text-gray-400 mb-1">지수 기준월 (이 달 = 100.0)</label>
-          <select
-            value={baseDate}
-            onChange={e => setBaseDate(e.target.value)}
-            className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-          >
-            {allDates.slice().reverse().map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-        </div>
+        {/* 지수 기준월 — 시세지표(지수 리베이스)에만 적용 */}
+        {isPrice && (
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-gray-400">지수 기준월 (이 달 = 100.0)</label>
+              <button
+                onClick={() => setBaseLineOn(!baseLineOn)}
+                title="각 그래프에 기준월 세로선 표시 On/Off"
+                className={`flex-none whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-semibold transition-colors ${
+                  baseLineOn ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-400'
+                }`}
+              >
+                세로선 {baseLineOn ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            <select
+              value={baseDate}
+              onChange={e => setBaseDate(e.target.value)}
+              className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            >
+              {allDates.slice().reverse().map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 거래지표 보기 옵션 — 한 줄: 이동평균 토글/기간 + Y축 초기화 (주간과 동일) */}
+        {isTrade && (
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center gap-1 text-xs text-gray-400">
+              <span>거래지표 보기</span>
+              <InfoTip text={TRADE_VIEW_HELP} />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setTradeMaOn(!tradeMaOn)}
+                className={`flex-none whitespace-nowrap rounded-md border px-2 py-1 text-xs font-semibold transition-colors ${
+                  tradeMaOn ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-400'
+                }`}
+              >
+                이동평균 {tradeMaOn ? 'ON' : 'OFF'}
+              </button>
+              <select
+                value={tradeMaWindow}
+                disabled={!tradeMaOn}
+                onChange={e => setTradeMaWindow(Number(e.target.value))}
+                className="min-w-0 flex-1 text-xs border border-gray-200 rounded-md px-1.5 py-1 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-300"
+              >
+                {MA_OPTIONS.map(w => (
+                  <option key={w} value={w}>{MA_LABEL[w]}</option>
+                ))}
+              </select>
+              <button
+                onClick={resetTradeYRanges}
+                title="모든 그래프 Y축을 기본(0~200)으로 초기화"
+                className="flex-none whitespace-nowrap rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 transition-colors hover:border-blue-300 hover:bg-gray-50 hover:text-blue-600"
+              >
+                Y축 초기화
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Cascading region selector (주간 RegionSelector와 동일 구조) */}
@@ -194,9 +280,9 @@ export const MonthlyRegionCascade: React.FC = () => {
             <option value="">선택</option>
             <optgroup label="집계 지역">
               {AGGREGATE_REGIONS.map(a => (
-                <option key={a.weeklyKey} value={`agg:${a.weeklyKey}`} disabled={!isAvail(a.weeklyKey)}>
+                <option key={a.weeklyKey} value={`agg:${a.weeklyKey}`} disabled={!available(a.weeklyKey)}>
                   {a.label}
-                  {isAvail(a.weeklyKey) ? '' : ' (데이터 없음)'}
+                  {available(a.weeklyKey) ? '' : ' (데이터 없음)'}
                 </option>
               ))}
             </optgroup>
@@ -220,7 +306,9 @@ export const MonthlyRegionCascade: React.FC = () => {
             className="w-full text-sm border border-gray-200 rounded-md px-2 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-300"
           >
             <option value="">
-              {!selectedSido
+              {isTrade
+                ? '거래지표는 대지역만 선택'
+                : !selectedSido
                 ? selectedAggregate
                   ? '집계 지역은 중지역 없음'
                   : '대지역을 먼저 선택'

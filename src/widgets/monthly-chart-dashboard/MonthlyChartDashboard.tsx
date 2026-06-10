@@ -1,12 +1,14 @@
 import React, { useMemo } from 'react';
 import { useMonthlyStore } from '../../shared/lib/monthly-store';
 import type { MonthlyPriceRegion } from '../../entities/monthly-data';
+import { priceYConfig } from '../../shared/config/y-axis';
 import {
   type ChartRow,
   nearestDateIndex,
   MetricChart,
   useBrushRange,
 } from '../chart-dashboard/chart-primitives';
+import { YAxisControl } from '../weekly-trade-dashboard/YAxisControl';
 
 // 월간 시세지표 6차트 (주간 ChartDashboard와 동일 구조):
 //   매매지수 · 전세지수 · 매매증감(전월대비) · 전세증감 · 매매누적변동률 · 전세누적변동률
@@ -118,7 +120,12 @@ export const MonthlyChartDashboard: React.FC = () => {
     setFromDate,
     setToDate,
     baseDate,
+    baseLineOn,
+    allDates,
+    yRanges,
+    setYRange,
   } = useMonthlyStore();
+  const fullPeriod = allDates.length > 0 && fromDate <= allDates[0]!;
 
   const chartDataByMetric = useMemo(() => {
     if (priceData.length === 0 || selectedRegions.length === 0) return null;
@@ -210,17 +217,38 @@ export const MonthlyChartDashboard: React.FC = () => {
     <div className="flex h-full flex-col gap-3">
       {/* 6개 그래프 — 남은 높이를 3×2로 가득 채움 (지수·증감·누적변동률) */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-2 xl:grid-rows-3">
-        {chartViews.map(view => (
-          <MetricChart
-            key={view.id}
-            title={view.title}
-            subtitle={view.subtitle}
-            unit={view.unit}
-            data={view.data}
-            selectedRegions={selectedRegions}
-            regionLabels={regionLabels}
-          />
-        ))}
+        {chartViews.map(view => {
+          const cfg = priceYConfig(view.id, fullPeriod);
+          const range = cfg ? yRanges[`mp:${view.id}`] ?? { min: cfg.min, max: cfg.max } : undefined;
+          return (
+            <MetricChart
+              key={view.id}
+              title={view.title}
+              subtitle={view.subtitle}
+              unit={view.unit}
+              data={view.data}
+              selectedRegions={selectedRegions}
+              regionLabels={regionLabels}
+              baseLineDate={snappedBaseDate}
+              showBaseLine={baseLineOn}
+              yDomain={range ? [range.min, range.max] : undefined}
+              yTickStep={cfg?.tickStep}
+              yTickDecimals={cfg?.decimals}
+              headerRight={
+                cfg && range ? (
+                  <YAxisControl
+                    min={range.min}
+                    max={range.max}
+                    minOptions={cfg.minOptions}
+                    maxOptions={cfg.maxOptions}
+                    decimals={cfg.decimals}
+                    onChange={(mn, mx) => setYRange(`mp:${view.id}`, mn, mx)}
+                  />
+                ) : undefined
+              }
+            />
+          );
+        })}
       </div>
     </div>
   );

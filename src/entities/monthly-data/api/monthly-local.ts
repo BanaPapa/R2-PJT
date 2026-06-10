@@ -11,6 +11,7 @@ import type {
   RegionCompareItem,
   RegionCompareResult,
   MonthlyPriceRegion,
+  MonthlyMarketRegion,
 } from '../model/monthly-data.types';
 
 const JSON_URL = '/data/kb-monthly.json';
@@ -245,6 +246,28 @@ export const monthlyLocal = {
   async getTimeseries(regionPaths: string[], metric: string): Promise<MonthlySeries[]> {
     const L = await ensureLoaded();
     return regionPaths.map(p => seriesFor(L, p, metric));
+  },
+
+  // 시장지표(시세지표와 동일 구조): 선택 키들에 대해 ㎡당 평균 매매/전세가 시계열을 반환.
+  // 중지역까지 제공하며, 데이터 없는 지역은 metric별 폴백(상위)으로 채운다.
+  async getMarketData(keys: string[]): Promise<MonthlyMarketRegion[]> {
+    const L = await ensureLoaded();
+    return keys.map(key => {
+      const path = resolveKey(L, key);
+      if (!path) {
+        return { key, resolvedRegion: null, fallback: false, aptAvgSalePerM2: [], aptAvgJeonsePerM2: [] };
+      }
+      const sale = seriesFor(L, path, 'aptAvgSalePerM2');
+      const jeonse = seriesFor(L, path, 'aptAvgJeonsePerM2');
+      const resolved = sale.resolved ?? jeonse.resolved;
+      return {
+        key,
+        resolvedRegion: resolved?.resolvedRegion ?? L.metaByPath.get(path)?.region ?? null,
+        fallback: !!resolved?.fallback,
+        aptAvgSalePerM2: sale.data,
+        aptAvgJeonsePerM2: jeonse.data,
+      };
+    });
   },
 
   async getRegionCompare(

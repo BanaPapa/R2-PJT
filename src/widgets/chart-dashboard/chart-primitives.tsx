@@ -214,10 +214,18 @@ interface MetricChartProps {
   syncId?: string;
   // 기준선 값(예: 확산지수 100). 설정 시 점선 + 상/하 음영을 표시.
   referenceValue?: number;
+  // 지수 기준일(=100) 세로선 위치. 데이터에 존재하는 날짜여야 그려진다.
+  baseLineDate?: string;
+  // 기준일 세로선 표시 여부.
+  showBaseLine?: boolean;
   // 데이터에 `${region}__ma` 키가 있으면 이동평균 오버레이(점선)를 그린다.
   showMovingAverage?: boolean;
   // Y축 표시 범위. 미지정 시 데이터에 맞춰 자동.
   yDomain?: [number | 'auto', number | 'auto'];
+  // Y축 눈금 간격(숫자 도메인일 때). 과밀(>16)하면 자동으로 기본 눈금으로 폴백.
+  yTickStep?: number;
+  // Y축 라벨 소수자리 (0 = 정수). 미지정 시 1.
+  yTickDecimals?: number;
   // 제목 옆 ⓘ 설명. 차트 우측열은 align='right'로 잘림 방지.
   info?: string;
   infoAlign?: 'left' | 'right';
@@ -234,14 +242,32 @@ export const MetricChart: React.FC<MetricChartProps> = ({
   regionLabels,
   syncId = 'kb-weekly',
   referenceValue,
+  baseLineDate,
+  showBaseLine = false,
   showMovingAverage = false,
   yDomain,
+  yTickStep,
+  yTickDecimals,
   info,
   infoAlign = 'left',
   headerRight,
 }) => {
   // 숫자 경계가 하나라도 있으면 데이터 초과분을 잘라 고정 축을 유지
   const fixedAxis = yDomain != null && yDomain.some(v => typeof v === 'number');
+  // 지정 간격으로 Y축 눈금 생성. 숫자 도메인이고 눈금 수가 과하지 않을 때만(과밀 시 자동 폴백).
+  const yTicks = useMemo(() => {
+    if (!yDomain || !yTickStep || typeof yDomain[0] !== 'number' || typeof yDomain[1] !== 'number') return undefined;
+    const lo = yDomain[0];
+    const hi = yDomain[1];
+    const count = Math.floor((hi - lo) / yTickStep + 1e-9);
+    if (count < 1 || count > 16) return undefined;
+    const ticks: number[] = [];
+    for (let i = 0; i <= count; i++) ticks.push(Math.round((lo + i * yTickStep) * 1000) / 1000);
+    return ticks;
+  }, [yDomain, yTickStep]);
+  const decimals = yTickDecimals ?? 1;
+  // 기준일 세로선: 표시 구간 안에 기준일이 실제로 존재할 때만 그린다(범위 밖이면 생략).
+  const baseLineActive = showBaseLine && !!baseLineDate && data.some(d => d.date === baseLineDate);
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
     return (
@@ -298,6 +324,16 @@ export const MetricChart: React.FC<MetricChartProps> = ({
                 <ReferenceLine y={referenceValue} stroke="#9ca3af" strokeDasharray="4 4" strokeWidth={1} ifOverflow="hidden" />
               </>
             )}
+            {baseLineActive && (
+              <ReferenceLine
+                x={baseLineDate}
+                stroke="#94a3b8"
+                strokeWidth={1}
+                strokeDasharray="3 3"
+                ifOverflow="extendDomain"
+                label={{ value: '기준', position: 'insideTopLeft', fontSize: 9, fill: '#94a3b8' }}
+              />
+            )}
             <XAxis
               dataKey="date"
               tick={{ fontSize: 10, fill: '#94a3b8' }}
@@ -313,7 +349,8 @@ export const MetricChart: React.FC<MetricChartProps> = ({
               tickLine={false}
               domain={yDomain ?? ['auto', 'auto']}
               allowDataOverflow={fixedAxis}
-              tickFormatter={v => v.toFixed(1)}
+              ticks={yTicks}
+              tickFormatter={v => v.toFixed(decimals)}
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend

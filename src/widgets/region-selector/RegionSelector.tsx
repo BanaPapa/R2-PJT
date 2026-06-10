@@ -45,6 +45,8 @@ export const RegionSelector: React.FC = () => {
     setTradeMaOn,
     setTradeMaWindow,
     resetTradeYRanges,
+    baseLineOn,
+    setBaseLineOn,
   } = useMonthlyStore();
   const isTrade = weeklyTab === 'trade';
 
@@ -177,7 +179,18 @@ export const RegionSelector: React.FC = () => {
         {/* 지수 기준일 — 시세지표(지수 리베이스)에만 적용 */}
         {!isTrade && (
           <div className="mt-3">
-            <label className="block text-xs text-gray-400 mb-1">지수 기준일 (이 주 = 100.0)</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-gray-400">지수 기준일 (이 주 = 100.0)</label>
+              <button
+                onClick={() => setBaseLineOn(!baseLineOn)}
+                title="각 그래프에 기준일 세로선 표시 On/Off"
+                className={`flex-none whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-semibold transition-colors ${
+                  baseLineOn ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-400'
+                }`}
+              >
+                세로선 {baseLineOn ? 'ON' : 'OFF'}
+              </button>
+            </div>
             <select
               value={baseDate}
               onChange={e => setBaseDate(e.target.value)}

@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import { useAppStore } from '../../shared/lib/store';
+import { useMonthlyStore } from '../../shared/lib/monthly-store';
 import { WEEKLY_METRICS, type MetricKey } from '../../shared/config';
+import { priceYConfig } from '../../shared/config/y-axis';
 import {
   type ChartRow,
   nearestDateIndex,
@@ -8,6 +10,7 @@ import {
   MetricChart,
   useBrushRange,
 } from './chart-primitives';
+import { YAxisControl } from '../weekly-trade-dashboard/YAxisControl';
 
 // 지수 메트릭(기준일 100 리베이스 대상) 판별
 function isIndexMetric(key: MetricKey): boolean {
@@ -81,7 +84,13 @@ export const ChartDashboard: React.FC = () => {
     setFromDate,
     setToDate,
     baseDate,
+    allDates,
   } = useAppStore();
+  const baseLineOn = useMonthlyStore(s => s.baseLineOn);
+  const yRanges = useMonthlyStore(s => s.yRanges);
+  const setYRange = useMonthlyStore(s => s.setYRange);
+  // 기간이 "전체"(시작이 첫 데이터 이하)인지 — 지수 기본 최대값(200→300) 판단에 사용
+  const fullPeriod = allDates.length > 0 && fromDate <= allDates[0]!;
 
   const chartDataByMetric = useMemo(() => {
     if (weeklyData.length === 0 || selectedRegions.length === 0) return null;
@@ -203,17 +212,38 @@ export const ChartDashboard: React.FC = () => {
     <div className="flex h-full flex-col gap-3">
       {/* 6개 그래프 — 남은 높이를 3×2로 가득 채움 (지수·증감·누적변동률) */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-2 xl:grid-rows-3">
-        {chartViews.map(view => (
-          <MetricChart
-            key={view.id}
-            title={view.title}
-            subtitle={view.subtitle}
-            unit={view.unit}
-            data={view.data}
-            selectedRegions={selectedRegions}
-            regionLabels={regionLabels}
-          />
-        ))}
+        {chartViews.map(view => {
+          const cfg = priceYConfig(view.id, fullPeriod);
+          const range = cfg ? yRanges[`wp:${view.id}`] ?? { min: cfg.min, max: cfg.max } : undefined;
+          return (
+            <MetricChart
+              key={view.id}
+              title={view.title}
+              subtitle={view.subtitle}
+              unit={view.unit}
+              data={view.data}
+              selectedRegions={selectedRegions}
+              regionLabels={regionLabels}
+              baseLineDate={snappedBaseDate}
+              showBaseLine={baseLineOn}
+              yDomain={range ? [range.min, range.max] : undefined}
+              yTickStep={cfg?.tickStep}
+              yTickDecimals={cfg?.decimals}
+              headerRight={
+                cfg && range ? (
+                  <YAxisControl
+                    min={range.min}
+                    max={range.max}
+                    minOptions={cfg.minOptions}
+                    maxOptions={cfg.maxOptions}
+                    decimals={cfg.decimals}
+                    onChange={(mn, mx) => setYRange(`wp:${view.id}`, mn, mx)}
+                  />
+                ) : undefined
+              }
+            />
+          );
+        })}
       </div>
     </div>
   );
