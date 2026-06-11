@@ -20,7 +20,7 @@ export const gemini: Adapter = {
   },
   async chat(def, cred, { system, user, model }) {
     const json = await asJson(
-      await fetch(`${def.baseUrl}/models/${model}:generateContent?key=${key(cred)}`, {
+      await fetch(`${def.baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${key(cred)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

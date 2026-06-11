@@ -5,6 +5,7 @@ import { readOne } from './credentials-store';
 import { getAdapter } from './adapters';
 
 interface AnalysisRequestLike {
+  id?: string;
   scope: unknown;
   datasets: unknown;
   provider?: string;
@@ -19,8 +20,8 @@ export async function buildMessages(root: string, req: AnalysisRequestLike): Pro
 
 export async function runProviderAnalysis(root: string, id: string, req: AnalysisRequestLike): Promise<void> {
   const responses = path.join(root, '.analysis', 'responses');
-  await fs.mkdir(responses, { recursive: true });
   try {
+    await fs.mkdir(responses, { recursive: true });
     const def = getProvider(req.provider ?? '');
     if (!def || def.apiShape === 'claude-bridge') throw new Error(`프록시 대상이 아닌 프로바이더: ${req.provider}`);
     const cred = await readOne(root, def.id);
@@ -30,6 +31,7 @@ export async function runProviderAnalysis(root: string, id: string, req: Analysi
     await fs.writeFile(path.join(responses, `${id}.md`), text || '_빈 응답_', 'utf8');
   } catch (err) {
     const msg = err instanceof Error ? err.message : '분석 실행 실패';
+    await fs.mkdir(responses, { recursive: true }).catch(() => {});
     await fs.writeFile(path.join(responses, `${id}.error.txt`), msg, 'utf8');
   }
 }
