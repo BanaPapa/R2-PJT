@@ -72,7 +72,13 @@ export function analysisBridge(): Plugin {
               await fs.rename(tmp, target);
               const provider = (parsed as { provider?: string }).provider;
               if (provider && provider !== 'claude-bridge') {
-                void runProviderAnalysis(root, id, { ...parsed, id });
+                void runProviderAnalysis(root, id, {
+                  id,
+                  scope: parsed.scope,
+                  datasets: parsed.datasets,
+                  provider: parsed.provider as string | undefined,
+                  model: (parsed.model ?? null) as string | null,
+                });
               }
               sendJson(res, 200, { id, status: 'pending' });
             } catch (err) {
