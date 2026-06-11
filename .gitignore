@@ -26,3 +26,6 @@ dist-ssr
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# 분석 브릿지 dev 작업 디렉터리 (요청/응답 파일)
+.analysis/

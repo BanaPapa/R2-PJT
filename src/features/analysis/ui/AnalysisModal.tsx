@@ -1,16 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../../shared/lib/store';
 import { useMonthlyStore } from '../../../shared/lib/monthly-store';
-import { runAnalysis, type AnalysisRequest, type AnalysisTab } from '../../../entities/analysis';
+import { runAnalysis, type AnalysisRequest, type AnalysisScope, type AnalysisTab, type TokenUsage } from '../../../entities/analysis';
 import { collectCurrentView, collectFor, selectedRegionUnion } from '../lib/collect';
+import { summarizeScope, formatUsage } from '../lib/saved';
+import { useSavedStore } from '../model/saved-store';
+import type { SavedAnalysis } from '../model/saved.types';
 import { MetricTree } from './MetricTree';
 import { AnalysisRegionPicker, type PickedRegion } from './AnalysisRegionPicker';
 import { SlotPickerList } from './SlotPickerList';
+import { SavedAnalysisList } from './SavedAnalysisList';
 import type { ChartSetSnapshot } from '../../chart-slots';
 import { Markdown } from './AnalysisResult';
 import { ProviderSelector } from './ProviderSelector';
 import { ProviderManager } from './ProviderManager';
-import { useProviderStore } from '../../../entities/provider';
+import { getProvider, useProviderStore } from '../../../entities/provider';
 
 type Phase = 'idle' | 'loading' | 'done' | 'error';
 type Panel = 'current' | 'custom' | 'slot';
@@ -54,7 +58,14 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ open, onClose }) =
   const [panel, setPanel] = useState<Panel>('current');
   const [phase, setPhase] = useState<Phase>('idle');
   const [result, setResult] = useState('');
+  const [resultModel, setResultModel] = useState('');
+  const [resultUsage, setResultUsage] = useState<TokenUsage | undefined>();
+  const [resultScope, setResultScope] = useState<AnalysisScope | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null); // 현재 결과가 이미 저장됨(또는 저장된 항목을 연 경우)
+  const [showSaved, setShowSaved] = useState(false);
   const [error, setError] = useState('');
+  const saveAnalysis = useSavedStore(s => s.save);
+  const savedCount = useSavedStore(s => s.items.length);
   const [selTabs, setSelTabs] = useState<Set<AnalysisTab>>(new Set());
   const [pickedRegions, setPickedRegions] = useState<PickedRegion[]>([]);
   const [weeklyOverride, setWeeklyOverride] = useState<PeriodOverride | undefined>();
@@ -75,8 +86,13 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ open, onClose }) =
     setMonthlyOverride(undefined);
     setPanel('current');
     setShowManager(false);
+    setShowSaved(false);
     setPhase('idle');
     setResult('');
+    setResultModel('');
+    setResultUsage(undefined);
+    setResultScope(null);
+    setSavedId(null);
     setError('');
     // 월간 거래지표 가용 지역 목록 확보(지역 선택기 availability용)
     void useMonthlyStore.getState().loadTradeRegions();
@@ -108,6 +124,10 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ open, onClose }) =
       const res = await runAnalysis(payload, { signal: ctrl.signal });
       if (ctrl.signal.aborted) return;
       setResult(res.result ?? '');
+      setResultModel(res.model ?? '');
+      setResultUsage(res.usage);
+      setResultScope(payload.scope);
+      setSavedId(null);
       setPhase('done');
     } catch (e) {
       if (ctrl.signal.aborted) return;
@@ -155,18 +175,48 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ open, onClose }) =
     setPhase('idle');
   };
 
+  // 현재 결과를 저장 슬롯에 보관.
+  const saveCurrent = () => {
+    if (!result || savedId) return;
+    const scopeLabel = resultScope ? summarizeScope(resultScope) : '분석 결과';
+    const id = saveAnalysis({
+      name: scopeLabel,
+      scopeLabel,
+      provider: selectedProviderId,
+      model: resultModel,
+      usage: resultUsage,
+      markdown: result,
+    });
+    setSavedId(id);
+  };
+
+  // 저장된 항목을 결과 화면으로 열기.
+  const openSaved = (item: SavedAnalysis) => {
+    setResult(item.markdown);
+    setResultModel(item.model);
+    setResultUsage(item.usage);
+    setResultScope(null);
+    setSavedId(item.id);
+    setShowSaved(false);
+    setPhase('done');
+  };
+
   const customDisabled = selTabs.size === 0 || pickedRegions.length === 0;
 
   const wEff = weeklyOverride ?? { from: wFrom, to: wTo };
   const mEff = monthlyOverride ?? { from: mFrom, to: mTo };
   const overridden = !!weeklyOverride || !!monthlyOverride;
 
+  // 로딩 안내는 프로바이더에 맞게. claude-bridge만 Claude 세션이 필요하다.
+  const activeProvider = getProvider(selectedProviderId);
+  const isBridgeProvider = !activeProvider || activeProvider.apiShape === 'claude-bridge';
+  const loadingHint = isBridgeProvider
+    ? '앱과 Claude 세션이 함께 켜져 있어야 결과가 도착합니다.'
+    : `${activeProvider.label}에 직접 요청하고 있습니다. 잠시만 기다려주세요.`;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={onClose}>
-      <div
-        className="flex h-[640px] max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
-        onMouseDown={e => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="flex h-[640px] max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
         {/* 헤더 */}
         <div className="flex flex-none items-center justify-between border-b border-gray-200 px-5 py-3.5">
           <h2 className="flex items-center gap-2 text-base font-bold text-gray-900">
@@ -183,22 +233,32 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ open, onClose }) =
           {phase === 'idle' && (
             showManager ? (
               <ProviderManager onBack={() => setShowManager(false)} />
+            ) : showSaved ? (
+              <SavedAnalysisList onBack={() => setShowSaved(false)} onOpen={openSaved} />
             ) : (
               <>
                 <ProviderSelector onManage={() => setShowManager(true)} />
-                {/* 방법 선택 탭 */}
-                <div className="mb-4 inline-flex rounded-lg bg-gray-100 p-0.5">
-                  {(['current', 'custom', 'slot'] as Panel[]).map(p => (
-                    <button
-                      key={p}
-                      onClick={() => setPanel(p)}
-                      className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
-                        panel === p ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      {p === 'current' ? '현재 화면' : p === 'custom' ? '직접 선택' : '슬롯'}
-                    </button>
-                  ))}
+                {/* 방법 선택 탭 + 저장된 분석 진입 */}
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="inline-flex rounded-lg bg-gray-100 p-0.5">
+                    {(['current', 'custom', 'slot'] as Panel[]).map(p => (
+                      <button
+                        key={p}
+                        onClick={() => setPanel(p)}
+                        className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
+                          panel === p ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        {p === 'current' ? '현재 화면' : p === 'custom' ? '직접 선택' : '슬롯'}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setShowSaved(true)}
+                    className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-600 hover:bg-gray-50"
+                  >
+                    저장된 분석{savedCount ? ` (${savedCount})` : ''}
+                  </button>
                 </div>
 
                 {panel === 'current' && (
@@ -250,7 +310,7 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ open, onClose }) =
             <div className="flex flex-col items-center justify-center py-16">
               <div className="mb-4 h-9 w-9 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
               <p className="text-sm text-gray-600">AI가 데이터를 분석하고 있습니다…</p>
-              <p className="mt-1 text-xs text-gray-400">앱과 Claude 세션이 함께 켜져 있어야 결과가 도착합니다.</p>
+              <p className="mt-1 text-xs text-gray-400">{loadingHint}</p>
               <button onClick={cancel} className="mt-5 rounded-lg border border-gray-300 px-4 py-1.5 text-sm text-gray-600 hover:bg-gray-50">
                 취소
               </button>
@@ -271,11 +331,24 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({ open, onClose }) =
 
         {/* 푸터 (결과 화면) */}
         {phase === 'done' && (
-          <div className="flex flex-none items-center justify-end gap-2 border-t border-gray-200 px-5 py-3">
-            <button onClick={() => setPhase('idle')} className="rounded-lg border border-gray-300 px-4 py-1.5 text-sm text-gray-600 hover:bg-gray-50">
+          <div className="flex flex-none items-center gap-2 border-t border-gray-200 px-5 py-3">
+            {(resultModel || resultUsage) && (
+              <span className="mr-auto min-w-0 truncate text-xs text-gray-400">
+                {resultModel && `응답 모델: ${resultModel}`}
+                {resultUsage && formatUsage(resultUsage) ? `  ·  ${formatUsage(resultUsage)}` : ''}
+              </span>
+            )}
+            <button
+              onClick={saveCurrent}
+              disabled={!!savedId}
+              className="flex-none rounded-lg border border-gray-300 px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:border-green-200 disabled:bg-green-50 disabled:text-green-600"
+            >
+              {savedId ? '저장됨 ✓' : '결과 저장'}
+            </button>
+            <button onClick={() => setPhase('idle')} className="flex-none rounded-lg border border-gray-300 px-4 py-1.5 text-sm text-gray-600 hover:bg-gray-50">
               다시 분석
             </button>
-            <button onClick={onClose} className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">
+            <button onClick={onClose} className="flex-none rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">
               닫기
             </button>
           </div>

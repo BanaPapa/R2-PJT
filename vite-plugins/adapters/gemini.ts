@@ -30,6 +30,13 @@ export const gemini: Adapter = {
       }),
     );
     const candidates = json.candidates as { content?: { parts?: { text?: string }[] } }[] | undefined;
-    return candidates?.[0]?.content?.parts?.map(p => p.text ?? '').join('') ?? '';
+    const u = json.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number } | undefined;
+    const promptTokens = typeof u?.promptTokenCount === 'number' ? u.promptTokenCount : undefined;
+    const completionTokens = typeof u?.candidatesTokenCount === 'number' ? u.candidatesTokenCount : undefined;
+    const totalTokens = typeof u?.totalTokenCount === 'number' ? u.totalTokenCount : undefined;
+    return {
+      text: candidates?.[0]?.content?.parts?.map(p => p.text ?? '').join('') ?? '',
+      usage: promptTokens != null || completionTokens != null || totalTokens != null ? { promptTokens, completionTokens, totalTokens } : undefined,
+    };
   },
 };

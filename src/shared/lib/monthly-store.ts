@@ -1,7 +1,9 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { monthlyLocal, monthlyTradeLocal, monthlyForecastLocal } from '../../entities/monthly-data';
 import type { MonthlyPriceRegion, MonthlyMarketRegion, MonthlyForecastRegion } from '../../entities/monthly-data';
 import type { WeeklyDataRow } from '../../entities/kb-data';
+import { DEFAULT_CHART_OPTIONS, type ChartOptions } from '../../shared/config';
 
 export type ViewMode = 'weekly' | 'monthly';
 // 시세지표 / 거래지표 — 주간·월간 공용 헤더 탭. 'market'(시장지표)는 월간 전용.
@@ -19,8 +21,12 @@ interface MonthlyStore {
   tradeYRanges: Record<string, { min: number; max: number }>;
   // 시세지표·시장지표 그래프별 Y축 범위 override (id는 'wp:saleIndex' 등 prefix로 구분)
   yRanges: Record<string, { min: number; max: number }>;
+  // 그래프별 차트 옵션(형태·혼합·막대 스타일). id는 yRanges와 동일한 prefix 규칙.
+  chartOptions: Record<string, ChartOptions>;
   // 시세지표 기준일(지수=100) 세로선 표시 여부 — 주간/월간 시세 차트 공용
   baseLineOn: boolean;
+  // 슬롯 복원 시 clearYRanges 자동초기화를 일회성으로 건너뛰기 위한 가드(prefix 집합).
+  skipYRangeClear: Set<string>;
 
   // ── 월간 시세지표 상태 (주간 store와 동일 구조) ──────────────────────
   selectedRegions: string[]; // 선택 키(주간 형식)
@@ -52,7 +58,13 @@ interface MonthlyStore {
   setTradeYRange: (id: string, min: number, max: number) => void;
   resetTradeYRanges: () => void;
   setYRange: (id: string, min: number, max: number) => void;
+  // 지정 prefix('wp:'/'mp:'/'mk:')의 Y축 수동 override를 모두 해제(기간·지역 변경 시 자동 재계산용)
+  clearYRanges: (prefix: string) => void;
+  // 그래프별 차트 옵션 부분 갱신(없으면 기본값에서 병합).
+  setChartOptions: (id: string, patch: Partial<ChartOptions>) => void;
   setBaseLineOn: (on: boolean) => void;
+  armSkipYRangeClear: (prefixes: string[]) => void;
+  consumeSkipYRangeClear: (prefix: string) => boolean;
 
   addRegion: (region: string, label?: string) => void;
   removeRegion: (region: string) => void;
@@ -69,7 +81,9 @@ interface MonthlyStore {
 
 const DEFAULT_FROM = '2015-01';
 
-export const useMonthlyStore = create<MonthlyStore>((set, get) => ({
+export const useMonthlyStore = create<MonthlyStore>()(
+  persist(
+    (set, get) => ({
   mode: 'weekly',
   weeklyTab: 'price',
 
@@ -77,7 +91,9 @@ export const useMonthlyStore = create<MonthlyStore>((set, get) => ({
   tradeMaWindow: 13,
   tradeYRanges: {},
   yRanges: {},
+  chartOptions: {},
   baseLineOn: true,
+  skipYRangeClear: new Set<string>(),
 
   selectedRegions: ['서울특별시', '전국'],
   regionLabels: { 서울특별시: '서울특별시', 전국: '전국' },
@@ -117,7 +133,39 @@ export const useMonthlyStore = create<MonthlyStore>((set, get) => ({
     set(s => ({ tradeYRanges: { ...s.tradeYRanges, [id]: { min, max } } })),
   resetTradeYRanges: () => set({ tradeYRanges: {} }),
   setYRange: (id, min, max) => set(s => ({ yRanges: { ...s.yRanges, [id]: { min, max } } })),
+  clearYRanges: prefix =>
+    set(s => {
+      const keys = Object.keys(s.yRanges).filter(k => k.startsWith(prefix));
+      if (keys.length === 0) return {}; // 변경 없음 → 불필요한 리렌더 방지
+      const next = { ...s.yRanges };
+      for (const k of keys) delete next[k];
+      return { yRanges: next };
+    }),
+  setChartOptions: (id, patch) =>
+    set(s => ({
+      chartOptions: {
+        ...s.chartOptions,
+        [id]: { ...DEFAULT_CHART_OPTIONS, ...s.chartOptions[id], ...patch },
+      },
+    })),
   setBaseLineOn: on => set({ baseLineOn: on }),
+  armSkipYRangeClear: prefixes =>
+    set(s => {
+      const next = new Set(s.skipYRangeClear);
+      for (const p of prefixes) next.add(p);
+      return { skipYRangeClear: next };
+    }),
+  consumeSkipYRangeClear: prefix => {
+    const has = get().skipYRangeClear.has(prefix);
+    if (has) {
+      set(s => {
+        const next = new Set(s.skipYRangeClear);
+        next.delete(prefix);
+        return { skipYRangeClear: next };
+      });
+    }
+    return has;
+  },
 
   addRegion: (region, label) => {
     const { selectedRegions, regionLabels } = get();
@@ -222,4 +270,25 @@ export const useMonthlyStore = create<MonthlyStore>((set, get) => ({
       set({ marketLoading: false });
     }
   },
-}));
+    }),
+    {
+      name: 'kb-monthly',
+      // skipYRangeClear(Set)는 직렬화 불가 → 런타임 전용으로 제외.
+      partialize: s => ({
+        mode: s.mode,
+        weeklyTab: s.weeklyTab,
+        tradeMaOn: s.tradeMaOn,
+        tradeMaWindow: s.tradeMaWindow,
+        baseLineOn: s.baseLineOn,
+        yRanges: s.yRanges,
+        tradeYRanges: s.tradeYRanges,
+        chartOptions: s.chartOptions,
+        selectedRegions: s.selectedRegions,
+        regionLabels: s.regionLabels,
+        fromDate: s.fromDate,
+        toDate: s.toDate,
+        baseDate: s.baseDate,
+      }),
+    },
+  ),
+);

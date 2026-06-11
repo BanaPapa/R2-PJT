@@ -9,6 +9,8 @@ import { MonthlyTradeDashboard } from '../widgets/monthly-trade-dashboard';
 import { MonthlyMarketDashboard } from '../widgets/monthly-market-dashboard';
 import { useAppStore } from '../shared/lib/store';
 import { useMonthlyStore, type ViewMode, type WeeklyTab } from '../shared/lib/monthly-store';
+import { AnalysisModal } from '../features/analysis';
+import { SlotControls } from '../features/chart-slots';
 
 const MODE_TABS: { key: ViewMode; label: string }[] = [
   { key: 'weekly', label: '주간' },
@@ -39,7 +41,7 @@ const MonthlyView: FC = () => {
   return <MonthlyChartDashboard />;
 };
 
-const AppHeader: FC = () => {
+const AppHeader: FC<{ onOpenAnalysis: () => void }> = ({ onOpenAnalysis }) => {
   const { latestDate, totalRecords } = useAppStore();
   const { mode, setMode, weeklyTab, setWeeklyTab } = useMonthlyStore();
 
@@ -87,10 +89,22 @@ const AppHeader: FC = () => {
           </div>
         </div>
 
-        <div className="hidden sm:flex items-center gap-4 text-xs text-gray-500">
-          {mode === 'weekly' && latestDate && <span>최신 데이터: {latestDate}</span>}
-          {mode === 'weekly' && totalRecords > 0 && <span>총 {totalRecords.toLocaleString()}건</span>}
-          {mode === 'monthly' && <span>월간 주택 시계열</span>}
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex items-center gap-4 text-xs text-gray-500">
+            {mode === 'weekly' && latestDate && <span>최신 데이터: {latestDate}</span>}
+            {mode === 'weekly' && totalRecords > 0 && <span>총 {totalRecords.toLocaleString()}건</span>}
+            {mode === 'monthly' && <span>월간 주택 시계열</span>}
+          </div>
+          <SlotControls />
+          <button
+            onClick={onOpenAnalysis}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            분석
+          </button>
         </div>
       </div>
     </header>
@@ -102,6 +116,7 @@ const SIDEBAR_MAX = 600;
 
 const App: FC = () => {
   const mode = useMonthlyStore(s => s.mode);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
 
   // 드래그로 조정 가능한 사이드바 폭(로컬 저장)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -142,7 +157,8 @@ const App: FC = () => {
   return (
     <StoreProvider>
       <div className="min-h-screen bg-gray-50">
-        <AppHeader />
+        <AppHeader onOpenAnalysis={() => setAnalysisOpen(true)} />
+        <AnalysisModal open={analysisOpen} onClose={() => setAnalysisOpen(false)} />
 
         <div className="flex h-screen pt-14">
           {/* Sidebar (드래그로 폭 조정) */}

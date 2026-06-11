@@ -15,14 +15,8 @@ export const PROVIDERS: ProviderDef[] = [
     label: 'OpenAI',
     apiShape: 'openai-compatible',
     baseUrl: 'https://api.openai.com/v1',
-    auth: ['apiKey', 'subscription'],
-    subscription: {
-      kind: 'oauth-pkce',
-      authorizeUrl: 'https://auth.openai.com/oauth/authorize',
-      tokenUrl: 'https://auth.openai.com/oauth/token',
-      clientId: 'TODO_CONFIRM_OPENAI_CLIENT_ID',
-      scopes: ['openid', 'profile', 'email', 'offline_access'],
-    },
+    // OpenAI는 서드파티 앱용 구독 OAuth(client_id)를 공개하지 않아 API 키만 지원.
+    auth: ['apiKey'],
     docsUrl: 'https://platform.openai.com/docs/api-reference/models',
   },
   {
@@ -42,14 +36,8 @@ export const PROVIDERS: ProviderDef[] = [
     label: 'Anthropic (Claude)',
     apiShape: 'anthropic',
     baseUrl: 'https://api.anthropic.com/v1',
-    auth: ['apiKey', 'subscription'],
-    subscription: {
-      kind: 'oauth-pkce',
-      authorizeUrl: 'https://claude.ai/oauth/authorize',
-      tokenUrl: 'https://console.anthropic.com/v1/oauth/token',
-      clientId: 'TODO_CONFIRM_ANTHROPIC_CLIENT_ID',
-      scopes: ['org:create_api_key', 'user:profile'],
-    },
+    // Claude Pro/Max 구독은 API와 분리돼 있고 공개 OAuth가 없어 API 키만 지원.
+    auth: ['apiKey'],
     docsUrl: 'https://docs.anthropic.com',
   },
   {
@@ -57,6 +45,8 @@ export const PROVIDERS: ProviderDef[] = [
     label: 'OpenRouter',
     apiShape: 'openai-compatible',
     baseUrl: 'https://openrouter.ai/api/v1',
+    // /models는 공개 엔드포인트라 키 없이 무료 모델 포함 목록 조회 가능(실행엔 키 필요).
+    publicModelList: true,
     auth: ['apiKey', 'subscription'],
     subscription: {
       kind: 'oauth-pkce',

@@ -3,7 +3,7 @@ import { openAiCompatible, type Adapter } from './openai-compatible';
 import { anthropic } from './anthropic';
 import { gemini } from './gemini';
 
-export type { Adapter, ChatInput } from './openai-compatible';
+export type { Adapter, ChatInput, ChatResult } from './openai-compatible';
 
 export function getAdapter(shape: ApiShape): Adapter {
   switch (shape) {

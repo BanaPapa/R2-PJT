@@ -37,6 +37,14 @@ describe('analysis-runner', () => {
     expect(md).toBe('# 분석결과');
   });
 
+  it('usage가 있으면 .usage.json 사이드카를 쓴다', async () => {
+    await writeOne(root, 'openai', { method: 'apiKey', apiKey: 'k' });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: () => Promise.resolve({ choices: [{ message: { content: '# 결과' } }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } }), text: () => Promise.resolve('') } as Response);
+    await runProviderAnalysis(root, 'id3', req);
+    const usage = JSON.parse(await fs.readFile(path.join(root, '.analysis/responses/id3.usage.json'), 'utf8'));
+    expect(usage).toMatchObject({ promptTokens: 10, completionTokens: 20, totalTokens: 30 });
+  });
+
   it('실패 시 .error.txt를 쓴다', async () => {
     await writeOne(root, 'openai', { method: 'apiKey', apiKey: 'k' });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 401, text: () => Promise.resolve('unauthorized') } as Response);

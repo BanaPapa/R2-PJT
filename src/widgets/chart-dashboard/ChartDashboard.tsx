@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useAppStore } from '../../shared/lib/store';
 import { useMonthlyStore } from '../../shared/lib/monthly-store';
-import { WEEKLY_METRICS, type MetricKey } from '../../shared/config';
-import { priceYConfig } from '../../shared/config/y-axis';
+import { WEEKLY_METRICS, DEFAULT_CHART_OPTIONS, type MetricKey } from '../../shared/config';
+import { computeDynamicYConfig, type DynamicYOptions } from '../../shared/config/y-axis';
 import {
   type ChartRow,
   nearestDateIndex,
@@ -15,6 +15,12 @@ import { YAxisControl } from '../weekly-trade-dashboard/YAxisControl';
 // 지수 메트릭(기준일 100 리베이스 대상) 판별
 function isIndexMetric(key: MetricKey): boolean {
   return key.endsWith('Index');
+}
+
+// 차트별 동적 Y축 옵션 — 증감·누적변동률만 음수 허용(나머지는 0 이상).
+function priceYOpts(id: string): DynamicYOptions {
+  const allowNegative = id.endsWith('Change') || id.endsWith('Cumulative');
+  return { allowNegative };
 }
 
 // 기준일 표기: (2026.1.12=100.0)
@@ -84,13 +90,20 @@ export const ChartDashboard: React.FC = () => {
     setFromDate,
     setToDate,
     baseDate,
-    allDates,
   } = useAppStore();
   const baseLineOn = useMonthlyStore(s => s.baseLineOn);
   const yRanges = useMonthlyStore(s => s.yRanges);
   const setYRange = useMonthlyStore(s => s.setYRange);
-  // 기간이 "전체"(시작이 첫 데이터 이하)인지 — 지수 기본 최대값(200→300) 판단에 사용
-  const fullPeriod = allDates.length > 0 && fromDate <= allDates[0]!;
+  const clearYRanges = useMonthlyStore(s => s.clearYRanges);
+  const consumeSkipYRangeClear = useMonthlyStore(s => s.consumeSkipYRangeClear);
+  const chartOptions = useMonthlyStore(s => s.chartOptions);
+  const setChartOptions = useMonthlyStore(s => s.setChartOptions);
+
+  // 기간·지역·기준일이 바뀌면 표시 데이터가 달라지므로 수동 Y축 override를 해제 → 자동 재계산.
+  useEffect(() => {
+    if (consumeSkipYRangeClear('wp:')) return; // 슬롯 복원 직후 1회 건너뜀
+    clearYRanges('wp:');
+  }, [clearYRanges, consumeSkipYRangeClear, fromDate, toDate, baseDate, selectedRegions]);
 
   const chartDataByMetric = useMemo(() => {
     if (weeklyData.length === 0 || selectedRegions.length === 0) return null;
@@ -213,7 +226,7 @@ export const ChartDashboard: React.FC = () => {
       {/* 6개 그래프 — 남은 높이를 3×2로 가득 채움 (지수·증감·누적변동률) */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-2 xl:grid-rows-3">
         {chartViews.map(view => {
-          const cfg = priceYConfig(view.id, fullPeriod);
+          const cfg = computeDynamicYConfig(view.data, selectedRegions, priceYOpts(view.id));
           const range = cfg ? yRanges[`wp:${view.id}`] ?? { min: cfg.min, max: cfg.max } : undefined;
           return (
             <MetricChart
@@ -229,6 +242,8 @@ export const ChartDashboard: React.FC = () => {
               yDomain={range ? [range.min, range.max] : undefined}
               yTickStep={cfg?.tickStep}
               yTickDecimals={cfg?.decimals}
+              chartOptions={chartOptions[`wp:${view.id}`] ?? DEFAULT_CHART_OPTIONS}
+              onChartOptionsChange={patch => setChartOptions(`wp:${view.id}`, patch)}
               headerRight={
                 cfg && range ? (
                   <YAxisControl

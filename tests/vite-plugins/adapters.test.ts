@@ -26,27 +26,30 @@ describe('adapters.listModels', () => {
 });
 
 describe('adapters.chat', () => {
-  it('openai-compatible: choices[0].message.content 반환', async () => {
-    const spy = mockFetch({ choices: [{ message: { content: '# 결과' } }] });
+  it('openai-compatible: content + usage 반환', async () => {
+    const spy = mockFetch({ choices: [{ message: { content: '# 결과' } }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } });
     const out = await getAdapter('openai-compatible').chat(openaiDef, { method: 'apiKey', apiKey: 'k' }, { system: 'S', user: 'U', model: 'gpt-4o' });
-    expect(out).toBe('# 결과');
+    expect(out.text).toBe('# 결과');
+    expect(out.usage).toEqual({ promptTokens: 10, completionTokens: 20, totalTokens: 30, cost: undefined });
     const [url, init] = spy.mock.calls[0]!;
     expect(url).toBe('https://api.openai.com/v1/chat/completions');
     expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer k' });
   });
 
-  it('anthropic: content[0].text 반환 + system 분리', async () => {
-    const spy = mockFetch({ content: [{ type: 'text', text: '안녕' }] });
+  it('anthropic: text 반환 + system 분리 + usage 매핑', async () => {
+    const spy = mockFetch({ content: [{ type: 'text', text: '안녕' }], usage: { input_tokens: 5, output_tokens: 7 } });
     const out = await getAdapter('anthropic').chat(anthropicDef, { method: 'apiKey', apiKey: 'k' }, { system: 'S', user: 'U', model: 'claude-x' });
-    expect(out).toBe('안녕');
+    expect(out.text).toBe('안녕');
+    expect(out.usage).toEqual({ promptTokens: 5, completionTokens: 7, totalTokens: 12 });
     const body = JSON.parse((spy.mock.calls[0]![1] as RequestInit).body as string);
     expect(body.system).toBe('S');
     expect(body.messages).toEqual([{ role: 'user', content: 'U' }]);
   });
 
-  it('gemini: candidates[0].content.parts[0].text 반환', async () => {
-    mockFetch({ candidates: [{ content: { parts: [{ text: '지' }] } }] });
+  it('gemini: text 반환 + usageMetadata 매핑', async () => {
+    mockFetch({ candidates: [{ content: { parts: [{ text: '지' }] } }], usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 4, totalTokenCount: 7 } });
     const out = await getAdapter('gemini').chat(geminiDef, { method: 'apiKey', apiKey: 'k' }, { system: 'S', user: 'U', model: 'gemini-1.5-pro' });
-    expect(out).toBe('지');
+    expect(out.text).toBe('지');
+    expect(out.usage).toEqual({ promptTokens: 3, completionTokens: 4, totalTokens: 7 });
   });
 });

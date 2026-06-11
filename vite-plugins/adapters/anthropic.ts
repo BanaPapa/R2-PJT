@@ -29,6 +29,13 @@ export const anthropic: Adapter = {
       }),
     );
     const content = json.content as { type: string; text?: string }[] | undefined;
-    return content?.map(c => c.text ?? '').join('') ?? '';
+    const u = json.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+    const promptTokens = typeof u?.input_tokens === 'number' ? u.input_tokens : undefined;
+    const completionTokens = typeof u?.output_tokens === 'number' ? u.output_tokens : undefined;
+    const totalTokens = promptTokens != null || completionTokens != null ? (promptTokens ?? 0) + (completionTokens ?? 0) : undefined;
+    return {
+      text: content?.map(c => c.text ?? '').join('') ?? '',
+      usage: promptTokens != null || completionTokens != null ? { promptTokens, completionTokens, totalTokens } : undefined,
+    };
   },
 };

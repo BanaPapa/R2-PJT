@@ -52,7 +52,7 @@ export const ProviderManager: React.FC<ProviderManagerProps> = ({ onBack }) => {
                     <button onClick={() => void startOAuth(p.id)} className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50">구독으로 로그인</button>
                   )}
                   {p.auth.includes('subscription') && sub?.kind === 'session-token' && (
-                    <button onClick={() => { setOpenForm({ id: p.id, kind: 'token' }); setValue(''); }} className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50">구독 토큰</button>
+                    <button onClick={() => { setOpenForm({ id: p.id, kind: 'token' }); setValue(''); }} className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50">구독으로 로그인</button>
                   )}
                   {st?.connected && (
                     <button aria-label={`${p.id} 연결해제`} onClick={() => void disconnect(p.id)} className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50">연결해제</button>

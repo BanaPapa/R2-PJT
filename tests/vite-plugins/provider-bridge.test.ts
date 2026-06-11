@@ -24,4 +24,18 @@ describe('listProviderModels', () => {
     const models = await listProviderModels(root, 'openai', true);
     expect(models[0]?.id).toBe('gpt-4o');
   });
+
+  it('publicModelList 프로바이더는 키 없이도 익명으로 목록을 조회한다', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ id: 'deepseek/deepseek-r1:free' }] }),
+      text: () => Promise.resolve(''),
+    } as Response);
+    const models = await listProviderModels(root, 'openrouter', false);
+    expect(models[0]?.id).toBe('deepseek/deepseek-r1:free');
+    // 자격증명이 없으므로 Authorization 헤더 없이 호출돼야 한다.
+    const init = spy.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
+  });
 });

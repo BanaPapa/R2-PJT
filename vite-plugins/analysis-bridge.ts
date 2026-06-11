@@ -22,6 +22,31 @@ function genId(): string {
   return `${stamp}-${crypto.randomBytes(2).toString('hex')}`;
 }
 
+// 응답 결과에 표시할 모델 라벨. 저장된 요청 JSON에서 실제 프로바이더/모델을 읽는다.
+// claude-bridge(또는 모델 미지정)면 사람이 대행하므로 'claude-code'로 표기.
+async function responseModelLabel(requestsDir: string, id: string): Promise<string> {
+  const raw = await fs.readFile(path.join(requestsDir, `${id}.json`), 'utf8').catch(() => null);
+  if (!raw) return 'claude-code';
+  try {
+    const r = JSON.parse(raw) as { provider?: string; model?: string | null };
+    if (r.provider && r.provider !== 'claude-bridge') return r.model || r.provider;
+  } catch {
+    /* 잘못된 요청 파일은 기본값으로 폴백 */
+  }
+  return 'claude-code';
+}
+
+// 응답과 함께 저장된 토큰 사용량 사이드카(<id>.usage.json)를 읽는다. 없으면 undefined.
+async function readUsage(responsesDir: string, id: string): Promise<unknown> {
+  const raw = await fs.readFile(path.join(responsesDir, `${id}.usage.json`), 'utf8').catch(() => null);
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
 async function readBody(req: import('node:http').IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -108,7 +133,12 @@ export function analysisBridge(): Plugin {
               if (result == null) {
                 sendJson(res, 200, { status: 'pending' });
               } else {
-                sendJson(res, 200, { status: 'done', result, model: 'claude-code' });
+                sendJson(res, 200, {
+                  status: 'done',
+                  result,
+                  model: await responseModelLabel(requestsDir, id),
+                  usage: await readUsage(responsesDir, id),
+                });
               }
             } catch (err) {
               sendJson(res, 500, { error: err instanceof Error ? err.message : '응답 조회 실패' });

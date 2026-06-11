@@ -25,7 +25,11 @@ export async function listProviderModels(root: string, id: string, _force: boole
   if (!def) throw new Error(`알 수 없는 프로바이더: ${id}`);
   if (def.apiShape === 'claude-bridge') return [];
   const cred = await readOne(root, id);
-  if (!cred) throw new Error(`연결되지 않은 프로바이더: ${id}`);
+  if (!cred) {
+    // 공개 /models 엔드포인트가 있으면 자격증명 없이도 목록만 조회 가능.
+    if (def.publicModelList) return getAdapter(def.apiShape).listModels(def, { method: 'apiKey' });
+    throw new Error(`연결되지 않은 프로바이더: ${id}`);
+  }
   return getAdapter(def.apiShape).listModels(def, cred);
 }
 

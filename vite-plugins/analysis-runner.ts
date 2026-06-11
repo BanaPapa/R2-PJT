@@ -27,8 +27,9 @@ export async function runProviderAnalysis(root: string, id: string, req: Analysi
     const cred = await readOne(root, def.id);
     if (!cred) throw new Error(`연결되지 않은 프로바이더: ${def.id}`);
     const { system, user } = await buildMessages(root, req);
-    const text = await getAdapter(def.apiShape).chat(def, cred, { system, user, model: req.model ?? '' });
+    const { text, usage } = await getAdapter(def.apiShape).chat(def, cred, { system, user, model: req.model ?? '' });
     await fs.writeFile(path.join(responses, `${id}.md`), text || '_빈 응답_', 'utf8');
+    if (usage) await fs.writeFile(path.join(responses, `${id}.usage.json`), JSON.stringify(usage), 'utf8');
   } catch (err) {
     const msg = err instanceof Error ? err.message : '분석 실행 실패';
     await fs.mkdir(responses, { recursive: true }).catch(() => {});

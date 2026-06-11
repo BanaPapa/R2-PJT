@@ -1,6 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Settings, RefreshCw } from 'lucide-react';
-import { PROVIDERS, getProvider, useProviderStore } from '../../../entities/provider';
+import {
+  PROVIDERS, getProvider, useProviderStore,
+  sortModels, modelOptionLabel, MODEL_SORTS, DEFAULT_MODEL_SORT, type ModelSort,
+} from '../../../entities/provider';
 
 interface ProviderSelectorProps {
   onManage: () => void;
@@ -13,6 +16,9 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({ onManage }) 
   const loading = useProviderStore(s => s.loadingModels[selectedProviderId] ?? false);
   const select = useProviderStore(s => s.select);
   const refreshModels = useProviderStore(s => s.refreshModels);
+
+  const [sort, setSort] = useState<ModelSort>(DEFAULT_MODEL_SORT);
+  const sortedModels = useMemo(() => sortModels(models, sort), [models, sort]);
 
   const def = getProvider(selectedProviderId);
   const isBridge = def?.apiShape === 'claude-bridge';
@@ -47,8 +53,20 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({ onManage }) 
             className="min-w-40 rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
           >
             <option value="">{loading ? '불러오는 중…' : '모델 선택'}</option>
-            {models.map(m => (
-              <option key={m.id} value={m.id}>{m.label ?? m.id}</option>
+            {sortedModels.map(m => (
+              <option key={m.id} value={m.id}>{modelOptionLabel(m)}</option>
+            ))}
+          </select>
+          <label className="sr-only" htmlFor="model-sort">정렬</label>
+          <select
+            id="model-sort"
+            aria-label="모델 정렬"
+            value={sort}
+            onChange={e => setSort(e.target.value as ModelSort)}
+            className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-600"
+          >
+            {MODEL_SORTS.map(s => (
+              <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
           <button

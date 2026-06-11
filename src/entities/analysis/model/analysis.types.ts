@@ -55,10 +55,19 @@ export interface AnalysisRequest {
   model?: string | null;   // 추가
 }
 
+// 모델 호출 토큰 사용량. 프로바이더마다 제공 필드가 달라 모두 옵셔널.
+export interface TokenUsage {
+  promptTokens?: number;     // 입력 토큰
+  completionTokens?: number; // 출력 토큰
+  totalTokens?: number;      // 합계
+  cost?: number;             // USD 비용(OpenRouter 등 제공 시)
+}
+
 export interface AnalysisResult {
   id: string;
   status: 'pending' | 'done' | 'error';
   result?: string; // 마크다운
   model?: string;
+  usage?: TokenUsage;
   error?: string;
 }
