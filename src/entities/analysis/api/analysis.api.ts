@@ -1,4 +1,4 @@
-import type { AnalysisRequest, AnalysisResult } from '../model/analysis.types';
+import type { AnalysisRequest, AnalysisResult, AskRequest } from '../model/analysis.types';
 
 // dev 브릿지 엔드포인트. 추후 실제 모델 API로 바뀌어도 이 모듈 인터페이스는 유지한다.
 const BASE = '/api/analysis';
@@ -10,7 +10,7 @@ export interface PollOptions {
 }
 
 // 분석 요청 전송 → 생성된 id 반환.
-export async function postAnalysis(payload: AnalysisRequest): Promise<string> {
+export async function postAnalysis(payload: AnalysisRequest | AskRequest): Promise<string> {
   const res = await fetch(BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -53,6 +53,12 @@ export async function runAnalysis(
   payload: AnalysisRequest,
   opts: PollOptions = {},
 ): Promise<AnalysisResult> {
+  const id = await postAnalysis(payload);
+  return pollAnalysis(id, opts);
+}
+
+// 질문 요청 + 결과 폴링. 엔드포인트·폴링은 분석과 동일하게 재사용.
+export async function runAsk(payload: AskRequest, opts: PollOptions = {}): Promise<AnalysisResult> {
   const id = await postAnalysis(payload);
   return pollAnalysis(id, opts);
 }

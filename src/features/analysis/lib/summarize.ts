@@ -76,3 +76,20 @@ export function fitPayloadBudget(datasets: AnalysisDataset[], budget = TOTAL_POI
     return { ...d, byRegion };
   });
 }
+
+// Q&A 컨텍스트 경량화: 각 시리즈를 perSeries 포인트로 재샘플(요약통계는 보존).
+// 분석(4,000포인트)보다 훨씬 작게 보내 멀티턴 토큰 누적을 줄인다.
+export function toAskContext(datasets: AnalysisDataset[], perSeries = 40): AnalysisDataset[] {
+  return datasets.map(d => {
+    const byRegion: AnalysisDataset['byRegion'] = {};
+    for (const [region, rs] of Object.entries(d.byRegion)) {
+      const { series, sampled } = sampleSeries(rs.series, perSeries);
+      byRegion[region] = {
+        summary: rs.summary,
+        series: series.map(p => ({ date: p.date, value: roundValue(p.value) })),
+        sampled: sampled || rs.sampled,
+      };
+    }
+    return { ...d, byRegion };
+  });
+}

@@ -1,4 +1,4 @@
-export { postAnalysis, pollAnalysis, runAnalysis, type PollOptions } from './api/analysis.api';
+export { postAnalysis, pollAnalysis, runAnalysis, runAsk, type PollOptions } from './api/analysis.api';
 export type {
   SeriesSummary,
   SeriesPoint,
@@ -9,4 +9,6 @@ export type {
   AnalysisRequest,
   AnalysisResult,
   TokenUsage,
+  AskTurn,
+  AskRequest,
 } from './model/analysis.types';

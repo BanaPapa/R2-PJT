@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { ProviderManager } from '../../../src/features/analysis/ui/ProviderManager';
 import { useProviderStore } from '../../../src/entities/provider';
 
@@ -34,5 +34,21 @@ describe('ProviderManager', () => {
     render(<ProviderManager onBack={() => {}} />);
     fireEvent.click(screen.getByLabelText('xai 연결해제'));
     expect(spy).toHaveBeenCalledWith('xai');
+  });
+
+  it('xAI 구독 로그인은 새 창을 열고 코드 입력 후 submitOAuthCode를 호출한다', async () => {
+    useProviderStore.setState({ statuses: { xai: { connected: false } }, models: {}, loadingModels: {} });
+    const startSpy = vi.spyOn(useProviderStore.getState(), 'startOAuthCode').mockResolvedValue('state-xyz');
+    const submitSpy = vi.spyOn(useProviderStore.getState(), 'submitOAuthCode').mockResolvedValue();
+    render(<ProviderManager onBack={() => {}} />);
+
+    const xaiRow = screen.getByText('xAI (Grok)').closest('li')!;
+    fireEvent.click(within(xaiRow).getByText('구독으로 로그인'));
+    expect(startSpy).toHaveBeenCalledWith('xai');
+
+    const input = await screen.findByPlaceholderText('발급된 코드 붙여넣기');
+    fireEvent.change(input, { target: { value: '  paste-code  ' } });
+    fireEvent.click(screen.getByText('저장'));
+    expect(submitSpy).toHaveBeenCalledWith('xai', 'state-xyz', 'paste-code');
   });
 });

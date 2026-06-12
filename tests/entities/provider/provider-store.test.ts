@@ -9,7 +9,7 @@ vi.mock('../../../src/entities/provider/api/provider.api', () => apiMock);
 import { useProviderStore } from '../../../src/entities/provider/model/provider.store';
 
 beforeEach(() => {
-  useProviderStore.setState({ selectedProviderId: 'claude-bridge', selectedModelId: null, statuses: {}, models: {}, loadingModels: {} });
+  useProviderStore.setState({ selectedProviderId: 'claude-bridge', selectedModelId: null, statuses: {}, models: {}, loadingModels: {}, modelErrors: {} });
   vi.clearAllMocks();
 });
 
@@ -31,5 +31,18 @@ describe('useProviderStore', () => {
     useProviderStore.getState().select('openai', 'gpt-4o');
     expect(useProviderStore.getState().selectedProviderId).toBe('openai');
     expect(useProviderStore.getState().selectedModelId).toBe('gpt-4o');
+  });
+
+  it('refreshModels 실패 시 에러를 저장하고 로딩을 끈다(삼키지 않음)', async () => {
+    apiMock.fetchModels.mockRejectedValueOnce(new Error('프로바이더 요청 실패 (500) 403 credits'));
+    await useProviderStore.getState().refreshModels('xai', true);
+    expect(useProviderStore.getState().modelErrors.xai).toContain('403');
+    expect(useProviderStore.getState().loadingModels.xai).toBe(false);
+  });
+
+  it('refreshModels 성공 시 이전 에러를 지운다', async () => {
+    useProviderStore.setState({ modelErrors: { xai: '이전 에러' } });
+    await useProviderStore.getState().refreshModels('xai', true);
+    expect(useProviderStore.getState().modelErrors.xai ?? null).toBeNull();
   });
 });

@@ -48,6 +48,7 @@ export interface AnalysisScope {
 
 export interface AnalysisRequest {
   id?: string;
+  kind?: 'analysis'; // 미지정=analysis. ask와 구분용.
   generatedAt: string;
   scope: AnalysisScope;
   datasets: AnalysisDataset[];
@@ -70,4 +71,24 @@ export interface AnalysisResult {
   model?: string;
   usage?: TokenUsage;
   error?: string;
+}
+
+// 한 번의 질문/답변 턴
+export interface AskTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+// 분석 결과 기반 질문 요청. 브리지는 AnalysisRequest와 동일 엔드포인트로 받는다.
+export interface AskRequest {
+  id?: string;
+  kind: 'ask';
+  generatedAt: string;
+  scope: AnalysisScope;
+  datasets: AnalysisDataset[]; // 경량 컨텍스트(요약 + 성긴 시계열)
+  resultMarkdown: string;      // 직전 분석 결과(전체 탭)
+  history: AskTurn[];          // 직전까지의 Q/A
+  question: string;
+  provider?: string;
+  model?: string | null;
 }

@@ -14,6 +14,7 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({ onManage }) 
   const selectedModelId = useProviderStore(s => s.selectedModelId);
   const models = useProviderStore(s => s.models[selectedProviderId]) ?? [];
   const loading = useProviderStore(s => s.loadingModels[selectedProviderId] ?? false);
+  const modelError = useProviderStore(s => s.modelErrors[selectedProviderId] ?? null);
   const select = useProviderStore(s => s.select);
   const refreshModels = useProviderStore(s => s.refreshModels);
 
@@ -28,7 +29,8 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({ onManage }) 
   }, [selectedProviderId, isBridge, refreshModels]);
 
   return (
-    <div className="mb-4 flex items-center gap-2">
+    <div className="mb-4 space-y-1">
+    <div className="flex items-center gap-2">
       <label className="sr-only" htmlFor="prov">프로바이더</label>
       <select
         id="prov"
@@ -86,6 +88,12 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({ onManage }) 
       >
         <Settings className="h-4 w-4" />
       </button>
+    </div>
+      {!isBridge && modelError && !loading && (
+        <p role="alert" className="text-xs text-red-600">
+          모델 목록을 불러오지 못했습니다: {modelError}
+        </p>
+      )}
     </div>
   );
 };

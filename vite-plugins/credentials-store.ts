@@ -10,6 +10,7 @@ export interface Credential {
   accessToken?: string;  // oauth
   refreshToken?: string;
   expiresAt?: number;
+  accountId?: string;    // chatgpt-codex: ChatGPT-Account-ID 헤더용(id_token에서 추출)
 }
 export type CredentialStore = Record<string, Credential>;
 

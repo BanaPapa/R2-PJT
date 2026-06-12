@@ -12,18 +12,36 @@ export const ProviderManager: React.FC<ProviderManagerProps> = ({ onBack }) => {
   const saveApiKey = useProviderStore(s => s.saveApiKey);
   const saveSessionToken = useProviderStore(s => s.saveSessionToken);
   const startOAuth = useProviderStore(s => s.startOAuth);
+  const startOAuthCode = useProviderStore(s => s.startOAuthCode);
+  const submitOAuthCode = useProviderStore(s => s.submitOAuthCode);
   const disconnect = useProviderStore(s => s.disconnect);
 
-  const [openForm, setOpenForm] = useState<{ id: string; kind: 'apiKey' | 'token' } | null>(null);
+  const [openForm, setOpenForm] = useState<{ id: string; kind: 'apiKey' | 'token' | 'oauthCode'; state?: string } | null>(null);
   const [value, setValue] = useState('');
 
   useEffect(() => { void refreshProviders(); }, [refreshProviders]);
 
+  // 구독 OAuth 콜백(새 창/loopback)이 끝나면 postMessage('oauth-done')로 알려온다 → 상태 갱신.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if ((e.data as { type?: string } | null)?.type === 'oauth-done') void refreshProviders();
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [refreshProviders]);
+
   const submit = async () => {
     if (!openForm || !value.trim()) return;
     if (openForm.kind === 'apiKey') await saveApiKey(openForm.id, value.trim());
-    else await saveSessionToken(openForm.id, value.trim());
+    else if (openForm.kind === 'token') await saveSessionToken(openForm.id, value.trim());
+    else await submitOAuthCode(openForm.id, openForm.state ?? '', value.trim());
     setOpenForm(null);
+    setValue('');
+  };
+
+  const beginOAuthCode = async (id: string) => {
+    const state = await startOAuthCode(id);
+    setOpenForm({ id, kind: 'oauthCode', state });
     setValue('');
   };
 
@@ -48,8 +66,11 @@ export const ProviderManager: React.FC<ProviderManagerProps> = ({ onBack }) => {
                   {p.auth.includes('apiKey') && (
                     <button onClick={() => { setOpenForm({ id: p.id, kind: 'apiKey' }); setValue(''); }} className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50">API 키</button>
                   )}
-                  {p.auth.includes('subscription') && sub?.kind === 'oauth-pkce' && (
+                  {p.auth.includes('subscription') && (sub?.kind === 'oauth-pkce' || sub?.kind === 'oauth-loopback') && (
                     <button onClick={() => void startOAuth(p.id)} className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50">구독으로 로그인</button>
+                  )}
+                  {p.auth.includes('subscription') && sub?.kind === 'oauth-code' && (
+                    <button onClick={() => void beginOAuthCode(p.id)} className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50">구독으로 로그인</button>
                   )}
                   {p.auth.includes('subscription') && sub?.kind === 'session-token' && (
                     <button onClick={() => { setOpenForm({ id: p.id, kind: 'token' }); setValue(''); }} className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50">구독으로 로그인</button>
@@ -65,7 +86,7 @@ export const ProviderManager: React.FC<ProviderManagerProps> = ({ onBack }) => {
                   <div className="flex items-center gap-2">
                     <input
                       type="password"
-                      placeholder={openForm.kind === 'apiKey' ? 'API 키 입력' : '구독 토큰 입력'}
+                      placeholder={openForm.kind === 'apiKey' ? 'API 키 입력' : openForm.kind === 'oauthCode' ? '발급된 코드 붙여넣기' : '구독 토큰 입력'}
                       value={value}
                       onChange={e => setValue(e.target.value)}
                       className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
@@ -74,6 +95,7 @@ export const ProviderManager: React.FC<ProviderManagerProps> = ({ onBack }) => {
                     <button onClick={() => setOpenForm(null)} className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-600">취소</button>
                   </div>
                   {openForm.kind === 'token' && sub?.tokenHint && <p className="text-xs text-gray-400">{sub.tokenHint}</p>}
+                  {openForm.kind === 'oauthCode' && <p className="text-xs text-gray-400">새 창에서 로그인 후 표시된 코드를 복사해 붙여넣으세요.</p>}
                 </div>
               )}
             </li>

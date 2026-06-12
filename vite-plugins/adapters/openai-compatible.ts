@@ -67,6 +67,7 @@ function toModelInfo(m: RawModel): ModelInfo {
     label: m.name,
     created: m.created,
     promptPrice,
+    completionPrice,
     contextLength: m.context_length,
     isFree,
   };

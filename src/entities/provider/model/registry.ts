@@ -15,9 +15,22 @@ export const PROVIDERS: ProviderDef[] = [
     label: 'OpenAI',
     apiShape: 'openai-compatible',
     baseUrl: 'https://api.openai.com/v1',
-    // OpenAI는 서드파티 앱용 구독 OAuth(client_id)를 공개하지 않아 API 키만 지원.
-    auth: ['apiKey'],
-    docsUrl: 'https://platform.openai.com/docs/api-reference/models',
+    auth: ['apiKey', 'subscription'],
+    // ChatGPT 구독(Plus/Pro)은 Codex CLI와 동일한 공개 OAuth로 로그인하고,
+    // api.openai.com이 아닌 ChatGPT 백엔드(codex/responses)로 요청한다(실험적, ToS 회색지대).
+    subscription: {
+      kind: 'oauth-loopback',
+      authorizeUrl: 'https://auth.openai.com/oauth/authorize',
+      tokenUrl: 'https://auth.openai.com/oauth/token',
+      clientId: 'app_EMoamEEZ73f0CkXaXp7hrann',
+      scopes: ['openid', 'profile', 'email', 'offline_access'],
+      loopbackPort: 1455,
+      loopbackPath: '/auth/callback',
+      extraAuthParams: { id_token_add_organizations: 'true', codex_cli_simplified_flow: 'true', originator: 'codex_cli_rs' },
+      apiShape: 'chatgpt-codex',
+      baseUrl: 'https://chatgpt.com/backend-api/codex',
+    },
+    docsUrl: 'https://developers.openai.com/codex/auth',
   },
   {
     id: 'xai',
@@ -25,9 +38,16 @@ export const PROVIDERS: ProviderDef[] = [
     apiShape: 'openai-compatible',
     baseUrl: 'https://api.x.ai/v1',
     auth: ['apiKey', 'subscription'],
+    // Grok CLI(hermes-agent)와 동일한 공개 OAuth 클라이언트. 동의 화면이 코드를 표시하면
+    // 사용자가 복사해 붙여넣고, 백엔드가 PKCE로 access_token으로 교환한다.
     subscription: {
-      kind: 'session-token',
-      tokenHint: 'grok.com 로그인 후 개발자도구 > Network에서 Authorization 베어러 토큰을 복사해 붙여넣으세요.',
+      kind: 'oauth-code',
+      authorizeUrl: 'https://auth.x.ai/oauth2/authorize',
+      tokenUrl: 'https://auth.x.ai/oauth2/token',
+      clientId: 'b1a00492-073a-47ea-816f-4c329264a828',
+      scopes: ['openid', 'profile', 'email', 'offline_access', 'grok-cli:access', 'api:access'],
+      redirectUri: 'http://127.0.0.1:56121/callback',
+      extraAuthParams: { referrer: 'hermes-agent', plan: 'generic' },
     },
     docsUrl: 'https://docs.x.ai',
   },

@@ -99,8 +99,12 @@ export function analysisBridge(): Plugin {
               if (provider && provider !== 'claude-bridge') {
                 void runProviderAnalysis(root, id, {
                   id,
+                  kind: parsed.kind as string | undefined,
                   scope: parsed.scope,
                   datasets: parsed.datasets,
+                  resultMarkdown: parsed.resultMarkdown as string | undefined,
+                  history: parsed.history as { role: string; text: string }[] | undefined,
+                  question: parsed.question as string | undefined,
                   provider: parsed.provider as string | undefined,
                   model: (parsed.model ?? null) as string | null,
                 });

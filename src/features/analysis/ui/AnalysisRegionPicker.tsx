@@ -12,7 +12,7 @@ export interface PickedRegion {
   label: string;
 }
 
-const MAX_ANALYSIS_REGIONS = 5; // 사이드바와 동일한 지역 상한
+export const MAX_ANALYSIS_REGIONS = 3; // 분석 대상 지역 상한(컨텍스트 과다 방지). 그래프 비교(5)와 별개.
 
 interface AnalysisRegionPickerProps {
   value: PickedRegion[];
