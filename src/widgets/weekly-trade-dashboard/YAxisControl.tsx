@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatNumber } from '../../shared/lib/format';
 
 // 기본(거래지표) Y축 옵션: 최소 0~100, 최대 0~200 (20단위)
 const DEFAULT_MIN_OPTIONS = [0, 20, 40, 60, 80, 100];
@@ -23,7 +24,7 @@ export const YAxisControl: React.FC<YAxisControlProps> = ({
   maxOptions = DEFAULT_MAX_OPTIONS,
   decimals = 0,
 }) => {
-  const fmt = (v: number) => v.toFixed(decimals);
+  const fmt = (v: number) => formatNumber(v, decimals);
   return (
     <div className="flex items-center gap-0.5 text-[10px] text-gray-400">
       <span className="mr-0.5">Y</span>

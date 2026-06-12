@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { weeklyLocal } from '../../entities/kb-data/api/weekly-local';
 import { weeklyTradeLocal } from '../../entities/kb-data/api/weekly-trade-local';
 import type { WeeklyDataRow } from '../../entities/kb-data';
@@ -53,7 +54,9 @@ const DEFAULT_TO = new Date().toISOString().split('T')[0];
 // KB 원본 데이터의 기준일. 이 날짜에서 모든 지수가 100.0이다.
 const DEFAULT_BASE = '2026-01-12';
 
-export const useAppStore = create<AppStore>((set, get) => ({
+export const useAppStore = create<AppStore>()(
+  persist(
+    (set, get) => ({
   allRegions: [],
   allTradeRegions: [],
   selectedRegions: ['서울특별시', '전국'],
@@ -171,4 +174,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // ignore
     }
   },
-}));
+    }),
+    {
+      name: 'kb-weekly',
+      partialize: s => ({
+        selectedRegions: s.selectedRegions,
+        regionLabels: s.regionLabels,
+        fromDate: s.fromDate,
+        toDate: s.toDate,
+        baseDate: s.baseDate,
+      }),
+    },
+  ),
+);

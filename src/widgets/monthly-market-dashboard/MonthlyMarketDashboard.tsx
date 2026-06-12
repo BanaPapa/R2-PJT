@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useMonthlyStore } from '../../shared/lib/monthly-store';
 import type { MonthlyMarketRegion, MonthlyForecastRegion } from '../../entities/monthly-data';
-import { MARKET_Y_CONFIG } from '../../shared/config/y-axis';
+import { computeDynamicYConfig, type DynamicYOptions } from '../../shared/config/y-axis';
+import { DEFAULT_CHART_OPTIONS } from '../../shared/config';
 import { type ChartRow, MetricChart } from '../chart-dashboard/chart-primitives';
 import { YAxisControl } from '../weekly-trade-dashboard/YAxisControl';
 
@@ -11,6 +12,12 @@ const NEUTRAL = 100; // 전망지수 확산지수 중립선
 
 type MarketField = 'aptAvgSalePerM2' | 'aptAvgJeonsePerM2';
 type ForecastField = 'saleForecast' | 'jeonseForecast';
+
+// 차트별 동적 Y축 옵션 — 평균 매매/전세가는 2,000만원 단위 고정, 나머지는 데이터로 산출.
+function marketYOpts(id: string): DynamicYOptions {
+  if (id === 'avgSale' || id === 'avgJeonse') return { step: 2000 };
+  return {};
+}
 
 const INFO: Record<string, string> = {
   avgSale: 'KB 월간 ㎡당 아파트 평균 매매가를 3.3㎡(평)당으로 환산(×3.305785)한 값. 단위: 만원/3.3㎡.',
@@ -91,7 +98,17 @@ export const MonthlyMarketDashboard: React.FC = () => {
     toDate,
     yRanges,
     setYRange,
+    clearYRanges,
+    consumeSkipYRangeClear,
+    chartOptions,
+    setChartOptions,
   } = useMonthlyStore();
+
+  // 기간·지역이 바뀌면 표시 데이터가 달라지므로 수동 Y축 override를 해제 → 자동 재계산.
+  useEffect(() => {
+    if (consumeSkipYRangeClear('mk:')) return; // 슬롯 복원 직후 1회 건너뜀
+    clearYRanges('mk:');
+  }, [clearYRanges, consumeSkipYRangeClear, fromDate, toDate, selectedRegions]);
 
   const chartViews = useMemo(() => {
     if (selectedRegions.length === 0) return null;
@@ -169,7 +186,7 @@ export const MonthlyMarketDashboard: React.FC = () => {
     <div className="flex h-full flex-col gap-3">
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-2 xl:grid-rows-3">
         {(chartViews ?? []).map((view, i) => {
-          const cfg = MARKET_Y_CONFIG[view.id];
+          const cfg = computeDynamicYConfig(view.data, selectedRegions, marketYOpts(view.id));
           const range = cfg ? yRanges[`mk:${view.id}`] ?? { min: cfg.min, max: cfg.max } : undefined;
           return (
             <MetricChart
@@ -187,6 +204,8 @@ export const MonthlyMarketDashboard: React.FC = () => {
               yDomain={range ? [range.min, range.max] : undefined}
               yTickStep={cfg?.tickStep}
               yTickDecimals={cfg?.decimals}
+              chartOptions={chartOptions[`mk:${view.id}`] ?? DEFAULT_CHART_OPTIONS}
+              onChartOptionsChange={patch => setChartOptions(`mk:${view.id}`, patch)}
               headerRight={
                 cfg && range ? (
                   <YAxisControl

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useAppStore } from '../../shared/lib/store';
 import { useMonthlyStore } from '../../shared/lib/monthly-store';
-import { TRADE_METRICS, type MetricKey } from '../../shared/config';
+import { TRADE_METRICS, DEFAULT_CHART_OPTIONS, type MetricKey } from '../../shared/config';
 import {
   type ChartRow,
   buildChartData,
@@ -43,7 +43,8 @@ export const TradeDashboard: React.FC = () => {
   } = useAppStore();
 
   // 보기 옵션: 이동평균(사이드바) + 그래프별 Y축 범위
-  const { tradeMaOn, tradeMaWindow, tradeYRanges, setTradeYRange } = useMonthlyStore();
+  const { tradeMaOn, tradeMaWindow, tradeYRanges, setTradeYRange, chartOptions, setChartOptions } =
+    useMonthlyStore();
 
   // 거래지표는 대지역/집계만 제공 — 데이터에 존재하는 지역만 그린다.
   const tradeRegionSet = useMemo(() => new Set(tradeData.map(r => r.region)), [tradeData]);
@@ -144,6 +145,8 @@ export const TradeDashboard: React.FC = () => {
               referenceValue={NEUTRAL}
               showMovingAverage={tradeMaOn}
               yDomain={[range.min, range.max]}
+              chartOptions={chartOptions[`wt:${view.id}`] ?? DEFAULT_CHART_OPTIONS}
+              onChartOptionsChange={patch => setChartOptions(`wt:${view.id}`, patch)}
               headerRight={
                 <YAxisControl
                   min={range.min}

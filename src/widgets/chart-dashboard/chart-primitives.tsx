@@ -1,8 +1,11 @@
 // 주간 차트 공통 요소 — 시세지표/거래지표 대시보드가 함께 사용.
 import React, { useEffect, useMemo, useRef } from 'react';
 import {
+  ComposedChart,
   LineChart,
   Line,
+  Area,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -13,9 +16,17 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from 'recharts';
-import { CHART_COLORS, type MetricKey } from '../../shared/config';
+import {
+  CHART_COLORS,
+  DEFAULT_CHART_OPTIONS,
+  seriesChartType,
+  type MetricKey,
+  type ChartOptions,
+} from '../../shared/config';
 import type { WeeklyDataRow } from '../../entities/kb-data';
 import { InfoTip } from '../../shared/ui/InfoTip';
+import { formatNumber } from '../../shared/lib/format';
+import { ChartOptionsControl } from './ChartOptionsControl';
 
 export type ChartRow = { date: string } & Record<string, number | null>;
 
@@ -231,6 +242,10 @@ interface MetricChartProps {
   infoAlign?: 'left' | 'right';
   // 제목 우측 끝에 표시할 컨트롤(예: 그래프별 Y축 조정)
   headerRight?: React.ReactNode;
+  // 차트 옵션(형태·혼합·막대 스타일). 미지정 시 기본(선그래프).
+  chartOptions?: ChartOptions;
+  // 옵션 변경 콜백. 지정 시 제목 우측에 차트 옵션 팝오버를 표시한다.
+  onChartOptionsChange?: (patch: Partial<ChartOptions>) => void;
 }
 
 export const MetricChart: React.FC<MetricChartProps> = ({
@@ -251,6 +266,8 @@ export const MetricChart: React.FC<MetricChartProps> = ({
   info,
   infoAlign = 'left',
   headerRight,
+  chartOptions = DEFAULT_CHART_OPTIONS,
+  onChartOptionsChange,
 }) => {
   // 숫자 경계가 하나라도 있으면 데이터 초과분을 잘라 고정 축을 유지
   const fixedAxis = yDomain != null && yDomain.some(v => typeof v === 'number');
@@ -278,7 +295,7 @@ export const MetricChart: React.FC<MetricChartProps> = ({
           .map((entry: any) => (
             <p key={entry.dataKey} style={{ color: entry.color }}>
               {regionLabels[entry.dataKey] ?? entry.dataKey}:{' '}
-              {entry.value != null ? `${entry.value.toFixed(2)}${unit}` : '-'}
+              {entry.value != null ? `${formatNumber(entry.value, 2)}${unit}` : '-'}
             </p>
           ))}
       </div>
@@ -286,6 +303,123 @@ export const MetricChart: React.FC<MetricChartProps> = ({
   };
 
   const quarterTicks = useMemo(() => getQuarterTicks(data.map(d => d.date)), [data]);
+
+  // 시리즈별(지역별) 실효 형태로 그린다 — 혼합차트 지원. 색상은 지역 인덱스로 순환.
+  const renderSeries = (region: string, idx: number) => {
+    const color = CHART_COLORS[idx % CHART_COLORS.length];
+    const name = regionLabels[region] ?? region;
+    switch (seriesChartType(chartOptions, region)) {
+      case 'bar':
+        return (
+          <Bar
+            key={region}
+            dataKey={region}
+            name={name}
+            fill={color}
+            fillOpacity={chartOptions.barOpacity}
+            barSize={chartOptions.barSize}
+            isAnimationActive={false}
+          />
+        );
+      case 'area':
+        return (
+          <Area
+            key={region}
+            type="monotone"
+            dataKey={region}
+            name={name}
+            stroke={color}
+            strokeWidth={1.5}
+            fill={color}
+            fillOpacity={0.15}
+            dot={false}
+            activeDot={{ r: 3 }}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        );
+      case 'lineMarkers':
+        // 선+점: 각 데이터 지점에 마커 표시(데이터가 듬성한 월간에 유용).
+        return (
+          <Line
+            key={region}
+            type="monotone"
+            dataKey={region}
+            name={name}
+            stroke={color}
+            strokeWidth={1.5}
+            dot={{ r: 2, fill: color }}
+            activeDot={{ r: 4 }}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        );
+      case 'step':
+        return (
+          <Line
+            key={region}
+            type="stepAfter"
+            dataKey={region}
+            name={name}
+            stroke={color}
+            strokeWidth={1.5}
+            dot={false}
+            activeDot={{ r: 3 }}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        );
+      case 'scatter':
+        // 선을 감추고 점만 표시 → 산점도 형태(범례는 원형 마커).
+        return (
+          <Line
+            key={region}
+            type="monotone"
+            dataKey={region}
+            name={name}
+            stroke={color}
+            strokeOpacity={0}
+            dot={{ r: 2, fill: color }}
+            activeDot={{ r: 4 }}
+            legendType="circle"
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        );
+      case 'line':
+      default:
+        return (
+          <Line
+            key={region}
+            type="monotone"
+            dataKey={region}
+            name={name}
+            stroke={color}
+            strokeWidth={1.5}
+            dot={false}
+            activeDot={{ r: 3 }}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        );
+    }
+  };
+
+  // 제목 우측 컨트롤: 차트 옵션 팝오버(선택적) + 차트별 추가 컨트롤(headerRight).
+  const headerControls =
+    onChartOptionsChange || headerRight ? (
+      <div className="flex flex-none items-center gap-1.5">
+        {onChartOptionsChange && (
+          <ChartOptionsControl
+            options={chartOptions}
+            regions={selectedRegions}
+            regionLabels={regionLabels}
+            onChange={onChartOptionsChange}
+          />
+        )}
+        {headerRight}
+      </div>
+    ) : null;
 
   if (data.length === 0) {
     return (
@@ -296,7 +430,7 @@ export const MetricChart: React.FC<MetricChartProps> = ({
             {subtitle && <span className="ml-1.5 text-xs font-normal text-gray-400">{subtitle}</span>}
             {info && <InfoTip text={info} align={infoAlign} className="ml-1.5" />}
           </h3>
-          {headerRight && <div className="flex-none">{headerRight}</div>}
+          {headerControls}
         </div>
         <div className="flex flex-1 items-center justify-center text-sm text-gray-400">데이터 없음</div>
       </div>
@@ -311,11 +445,11 @@ export const MetricChart: React.FC<MetricChartProps> = ({
           {subtitle && <span className="ml-1.5 text-xs font-normal text-gray-400">{subtitle}</span>}
           {info && <InfoTip text={info} align={infoAlign} className="ml-1.5" />}
         </h3>
-        {headerRight && <div className="flex-none">{headerRight}</div>}
+        {headerControls}
       </div>
       <div className="min-h-0 flex-1">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }} syncId={syncId}>
+          <ComposedChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }} syncId={syncId}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
             {referenceValue != null && (
               <>
@@ -350,27 +484,14 @@ export const MetricChart: React.FC<MetricChartProps> = ({
               domain={yDomain ?? ['auto', 'auto']}
               allowDataOverflow={fixedAxis}
               ticks={yTicks}
-              tickFormatter={v => v.toFixed(decimals)}
+              tickFormatter={v => formatNumber(v, decimals)}
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend
               wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }}
               formatter={(value: string) => regionLabels[value] ?? value}
             />
-            {selectedRegions.map((region, idx) => (
-              <Line
-                key={region}
-                type="monotone"
-                dataKey={region}
-                name={regionLabels[region] ?? region}
-                stroke={CHART_COLORS[idx % CHART_COLORS.length]}
-                strokeWidth={1.5}
-                dot={false}
-                activeDot={{ r: 3 }}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-            ))}
+            {selectedRegions.map((region, idx) => renderSeries(region, idx))}
             {showMovingAverage &&
               selectedRegions.map((region, idx) => (
                 <Line
@@ -387,7 +508,7 @@ export const MetricChart: React.FC<MetricChartProps> = ({
                   isAnimationActive={false}
                 />
               ))}
-          </LineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </div>
